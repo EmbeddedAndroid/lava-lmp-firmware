@@ -1,0 +1,43 @@
+Andy Green <andy.green@linaro.org>
+2012-12-18
+
+Building this on a linux box
+----------------------------
+
+Unfortunately the build support for the LPC11U24 is a bit of a mess at the
+moment.  Gcc can support cortex-m0 well but there are required libs and such
+which are cominig from a mix of other projects.
+
+Adam Green (no relation) has cooked a script called gcc4mbed which will pull
+in a toolchain from Ubuntu (works on Fedora) and other necessary libs.
+
+0) create a dir to hold the toolchain, enter the dir
+
+1) wget -O gcc4mbed.zip https://github.com/adamgreen/gcc4mbed/zipball/master
+
+2) unzip gcc4mbed.zip
+
+3) cd adamgreen-gcc4mbed-098e138 (or whatever it is in your copy)
+
+4) ./inux-install
+
+5) edit ~/.bash_profile to add the toolchain path mentioned at the end of the
+install script to your $PATH
+
+6) open a new terminal, check your $PATH has the new entry
+
+7) Notice this script pulls 32-bit x86 binaries, you may need to add i686 or
+whatever versions of zlib etc packages to get it working on x86_64 box.
+
+Instead of relying on mbed I have copied / adapted the necessary pieces into
+this project, so th only thing you need is the toolchain.
+
+I enquired about some of the NXP sample code I incorporate here
+
+http://www.lpcware.com/content/forum/license-sample-code
+
+but did not get a response.  So some of the pieces are under a funny license
+where they are freely availabe sample code intended to be incorporated into
+customer code, but are "All Rights Reserved".  The novel work in this project
+is licensed under LGPL2.
+
