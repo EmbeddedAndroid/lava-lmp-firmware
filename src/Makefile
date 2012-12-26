@@ -34,7 +34,6 @@ all:	../$(IMG)
 	@echo -n -e "\x$${S:6:2}\x$${S:4:2}\x$${S:2:2}\x$${S:0:2}" >>../$(IMG)
 	@dd if=$(BIN) of=../$(IMG) bs=1 skip=32 seek=32 2>/dev/null
 
-
 $(MAIN): $(OBJS) 
 	$(CC) $(CFLAGS) $(INCLUDES) -o $(MAIN) $(OBJS) $(LFLAGS) $(LIBS)
 
