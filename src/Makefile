@@ -25,12 +25,19 @@ all:	../$(IMG)
 #
 	@rm -f ../$(IMG)
 	@dd if=$(BIN) of=../$(IMG) bs=1 count=28 2>/dev/null
-	@S="FFFFFFFF"
+	@S="00000000"
+	@CS="00000000"
 	@for N in 0 4 8 12 16 20 24 ; do 
 		A=`hexdump -e "1/4 \"%08X\" \"\n\"" -s$$N -n 4 $(BIN)`
+		R=$$(( 0x$$CS + 0x$$A ))
+		CS=`printf %08X $$R`
 		R=$$(( 0x$$S - 0x$$A ))
+		R=$$(( $$R & 0xffffffff ))
 		S=`printf %08X $$R`
 	@done
+	@R=$$(( 0x$$S + 0x$$CS ))
+	@R=$$(( $$R & 0xffffffff ))
+	@echo S=0x$$S CS=0x$$CS sum = $$R
 	@echo -n -e "\x$${S:6:2}\x$${S:4:2}\x$${S:2:2}\x$${S:0:2}" >>../$(IMG)
 	@dd if=$(BIN) of=../$(IMG) bs=1 skip=32 seek=32 2>/dev/null
 	@S=`stat ../$(IMG) -c "%s"`
