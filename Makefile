@@ -27,6 +27,18 @@ all:
 	@for dir in $(SUBDIRS); do
 		$(MAKE) -C $$dir
 	@done
+	@M=`mount |grep DISABLD | cut -d' ' -f3- | sed s/\ type\ .*//g`
+	@if [ -z "$$M" ] ; then
+	@ echo "LPC11U24 not mounted"
+	@ exit 1
+	@else
+	@ echo copying ./$(IMG) to $$M
+	@ M=`echo $$M | sed 's/ /\\ /g'`
+	@ dd conv=nocreat,notrunc if=./$(IMG) of="$$M/firmware.bin"
+	@ umount "$$M"
+	@fi
+
+
 
 .ONESHELL:
 clean:
