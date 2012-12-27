@@ -33,6 +33,8 @@
 #define ALIGN4 __align(4)
 #endif
 
+#define _(c) c, 0
+
 /* USB Standard Device Descriptor */
 ALIGN4 const uint8_t VCOM_DeviceDescriptor[] = {
 	USB_DEVICE_DESC_SIZE,              /* bLength */
@@ -145,26 +147,22 @@ ALIGN4 const uint8_t VCOM_StringDescriptor[] = {
 	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
 	WBVAL(0x0409), /* US English */    /* wLANGID */
 	/* Index 0x01: Manufacturer */
-	(3*2 + 2),                        /* bLength (3 Char + Type + lenght) */
+	(10 * 2 + 2),                        /* bLength (3 Char + Type + lenght) */
 	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
-	'N', 0,
-	'X', 0,
-	'P', 0,
+	_('L'), _('i'), _('n'), _('a'), _('r'), _('o'), _(' '), _('L'), _('t'), _('d'), 
 	/* Index 0x02: Product */
-	(3*2 + 2),                        /* bLength (3 Char + Type + lenght) */
+	(7 * 2 + 2),                        /* bLength (3 Char + Type + lenght) */
 	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
-	'L', 0,
-	'P', 0,
-	'C', 0,
+	_('L'), _('a'), _('v'), _('a'), _('L'), _('M'), _('P'), 
 	/* Index 0x03: Serial Number */
-	(4*2 + 2),                        /* bLength (4 Char + Type + lenght) */
+	(4 * 2 + 2),                        /* bLength (4 Char + Type + lenght) */
 	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
 	'A', 0,
 	'B', 0,
 	'C', 0,
 	'D', 0,
 	/* Index 0x04: Interface 0, Alternate Setting 0 */
-	( 4*2 + 2),                        /* bLength (4 Char + Type + lenght) */
+	(4 * 2 + 2),                        /* bLength (4 Char + Type + lenght) */
 	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
 	'V',0,
 	'C',0,
