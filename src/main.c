@@ -55,19 +55,16 @@ struct vcom_data {
 	unsigned char txBuf[USB_HS_MAX_BULK_PACKET];
 	volatile uint8_t rxlen;
 	volatile uint8_t txlen;
-	volatile uint32_t sof_counter;
 	volatile uint8_t pend;
 };
 #define vcom ((struct vcom_data *) \
 			(& __top_RamUsb2 - CDC_SIZE - sizeof(struct vcom_data)))
 
-static ErrorCode_t VCOM_sof_event(USBD_HANDLE_T hUsb);
 static USBD_API_INIT_PARAM_T usb_param = {
 	.usb_reg_base = LPC_USB_BASE,
 	.mem_base = (long)(&__top_RamFull - USB_SIZE),
 	.mem_size = USB_SIZE,
 	.max_num_ep = 3,
-	.USB_SOF_Event = VCOM_sof_event,
 };
 
 static USB_CORE_DESCS_T desc = {
@@ -105,19 +102,6 @@ static void USB_pin_clk_init(void)
 
 	LPC_GPIO->DIR[0] |= 1 << 6;
 	LPC_GPIO->CLR[0] = 1 << 6;
-}
-
-/*
- * ms counter
- */
-
-static ErrorCode_t VCOM_sof_event(USBD_HANDLE_T hUsb)
-{
-	vcom->sof_counter++;
-
-	lava_lmp_1ms_tick();
-
-	return LPC_OK;
 }
 
 void usb_queue_tx(const unsigned char *buf, int len)

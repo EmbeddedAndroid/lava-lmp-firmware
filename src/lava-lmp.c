@@ -31,6 +31,7 @@ static int mode;
 static volatile unsigned char actuate[4];
 
 volatile int adc7;
+int bump;
 
 const char *hex = "0123456789ABCDEF";
 
@@ -169,6 +170,32 @@ void ADC_IRQHandler (void)
 	LPC_ADC->CR |= (1 << 24) | (1 << 7);
 }
 
+void TIMER32_1_IRQHandler(void)
+{
+	unsigned int reg = LPC_CT32B1->IR;
+	int n;
+
+	LPC_CT32B1->IR = reg;
+
+	if (reg & 1) {
+
+		bump++;
+
+		/* auto de-actuate relays */
+		for (n = 0; n < sizeof(actuate); n++) {
+			if (!actuate[n])
+				continue;
+
+			/* opposing side: kill counter and force off */
+			actuate[n ^ 1] = 0;
+			LPC_GPIO->W1[gpio1_relay[n ^ 1]] = 0;
+
+			actuate[n]--;
+			LPC_GPIO->W1[gpio1_relay[n]] = !!actuate[n];
+		}
+	}
+}
+
 void lava_lmp_pin_init(void)
 {
 	int n = 0;
@@ -263,29 +290,22 @@ void lava_lmp_pin_init(void)
 	/* everything that has relays is OK with them SET by default */
 	lava_lmp_actuate_relay(RL1_SET);
 	lava_lmp_actuate_relay(RL2_SET);
+
+	/* sort out the actuation timer */
+
+	LPC_SYSCON->SYSAHBCLKCTRL |= 1 << 9 | 1 << 10;
+
+	LPC_CT32B1->TCR = 2;
+	LPC_CT32B1->MR0 = 30000;
+	LPC_CT32B1->MCR = 3;
+	LPC_CT32B1->TCR = 1;
+
+	NVIC_EnableIRQ(TIMER_32_1_IRQn);
 }
 
 void lava_lmp_actuate_relay(int n)
 {
 	actuate[n] = RELAY_ACTUATION_MS;
-}
-
-void lava_lmp_1ms_tick(void)
-{
-	int n;
-
-	/* auto de-actuate relays */
-	for (n = 0; n < sizeof(actuate); n++) {
-		if (!actuate[n])
-			continue;
-
-		/* opposing side: kill counter and force off */
-		actuate[n ^ 1] = 0;
-		LPC_GPIO->W1[gpio1_relay[n ^ 1]] = 0;
-
-		actuate[n]--;
-		LPC_GPIO->W1[gpio1_relay[n]] = !!actuate[n];
-	}
 }
 
 

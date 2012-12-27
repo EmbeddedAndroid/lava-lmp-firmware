@@ -11,6 +11,8 @@
 #include <power_api.h>
 #include "lava-lmp.h"
 
+extern int bump;
+
 enum rx_states {
 	CMD,
 	MODE,
@@ -28,6 +30,10 @@ void lava_lmp_usb(unsigned char c)
 			break;
 		case 'M':
 			rx_state = MODE;
+			break;
+		case 'T':
+			hex8(bump, str);
+			usb_queue_string(str);
 			break;
 		case 'V':
 			hex8(adc7, str);
