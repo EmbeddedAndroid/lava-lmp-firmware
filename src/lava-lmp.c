@@ -55,6 +55,17 @@ unsigned char hex_char(const char c)
 	return 0x10;
 }
 
+void hex8(unsigned int val, char *buf)
+{
+	int n;
+
+	for (n = 28; n >= 0; n -= 4)
+		*buf++ = hex[(val >> n) & 0xf];
+
+	*buf++ = ' ' ;
+	*buf++ = '\0';
+}
+
 /* returns 0 = tied low, 1 = floating, 2 = tied high */
 
 static int lava_lmp_gpio_sense( __IO uint32_t *p, int bank, int bit)
