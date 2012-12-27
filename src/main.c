@@ -40,23 +40,59 @@ extern uint8_t VCOM_DeviceDescriptor[];
 extern uint8_t VCOM_StringDescriptor[];
 extern uint8_t VCOM_ConfigDescriptor[];
 
-USBD_API_T *usbapi;
+extern char __top_RamFull, __top_RamUsb2;
+#define CDC_SIZE 0x200
+#define USB_SIZE 0x1000
+
+static USBD_API_T *usbapi;
+
+/* this state and buffers go into the middle of the "USB RAM" */
 
 struct vcom_data {
 	USBD_HANDLE_T hUsb;
 	USBD_HANDLE_T hCdc;
-	uint8_t *rxBuf;
-	uint8_t *txBuf;
-	volatile uint16_t rxlen;
-	volatile uint16_t txlen;
+	unsigned char rxBuf[USB_HS_MAX_BULK_PACKET];
+	unsigned char txBuf[USB_HS_MAX_BULK_PACKET];
+	volatile uint8_t rxlen;
+	volatile uint8_t txlen;
 	volatile uint32_t sof_counter;
-	volatile uint16_t usbrx_pend;
-	volatile uint16_t usbtx_pend;
-}; 
+	volatile uint8_t pend;
+};
+#define vcom ((struct vcom_data *) \
+			(& __top_RamUsb2 - CDC_SIZE - sizeof(struct vcom_data)))
 
-struct vcom_data vcom;
+static ErrorCode_t VCOM_sof_event(USBD_HANDLE_T hUsb);
+static USBD_API_INIT_PARAM_T usb_param = {
+	.usb_reg_base = LPC_USB_BASE,
+	.mem_base = (long)(&__top_RamFull - USB_SIZE),
+	.mem_size = USB_SIZE,
+	.max_num_ep = 3,
+	.USB_SOF_Event = VCOM_sof_event,
+};
 
-void USB_pin_clk_init(void)
+static USB_CORE_DESCS_T desc = {
+	.device_desc = VCOM_DeviceDescriptor,
+	.string_desc = VCOM_StringDescriptor,
+	.full_speed_desc = VCOM_ConfigDescriptor,
+	.high_speed_desc = VCOM_ConfigDescriptor,
+};
+
+/* end of usb ram for cdc http://knowledgebase.nxp.com/showthread.php?t=3444 */
+
+static USBD_CDC_INIT_PARAM_T cdc_param = {
+	.mem_base = (long)(& __top_RamUsb2  - CDC_SIZE),
+	.mem_size = CDC_SIZE,
+	.cif_intf_desc = &VCOM_ConfigDescriptor[USB_CONFIGUARTION_DESC_SIZE],
+	.dif_intf_desc = &VCOM_ConfigDescriptor[USB_CONFIGUARTION_DESC_SIZE +
+		USB_INTERFACE_DESC_SIZE + 0x0013 + USB_ENDPOINT_DESC_SIZE],
+};
+
+enum {
+	PEND_TX = 1,
+	PEND_RX = 2,
+};
+
+static void USB_pin_clk_init(void)
 {
 	/* Enable AHB clock to the GPIO domain. */
 	LPC_SYSCON->SYSAHBCLKCTRL |= 1 << 6;
@@ -75,39 +111,33 @@ void USB_pin_clk_init(void)
  * ms counter
  */
 
-ErrorCode_t VCOM_sof_event(USBD_HANDLE_T hUsb)
+static ErrorCode_t VCOM_sof_event(USBD_HANDLE_T hUsb)
 {
-	vcom.sof_counter++;
+	vcom->sof_counter++;
 
 	lava_lmp_1ms_tick();
 
 	return LPC_OK;
 }
 
-ErrorCode_t VCOM_SendBreak(USBD_HANDLE_T hCDC, uint16_t mstime)
-{
-	return LPC_OK;
-}
-
 void usb_queue_tx(const unsigned char *buf, int len)
 {
-	while (vcom.txlen)
+	while (vcom->txlen)
 		;
 
 	NVIC_DisableIRQ(USB_IRQn);
 
-	memcpy(vcom.txBuf, buf, len);
-	vcom.txlen = len;
+	memcpy(vcom->txBuf, buf, len);
+	vcom->txlen = len;
 
 	/* not expecting any "in" IRQ to send anything, do it ourselves */
-	if (!vcom.usbtx_pend) {
-		vcom.txlen -= usbapi->hw->WriteEP(vcom.hUsb,
-					  USB_CDC_EP_BULK_IN, vcom.txBuf, len);
-		vcom.usbtx_pend = 1;
+	if (!(vcom->pend & PEND_TX)) {
+		vcom->txlen -= usbapi->hw->WriteEP(vcom->hUsb,
+					  USB_CDC_EP_BULK_IN, vcom->txBuf, len);
+		vcom->pend |= PEND_TX;
 	}
 
 	/* a pending "in" IRQ should happen soon and send buffered stuff */
-
 	NVIC_EnableIRQ(USB_IRQn);
 }
 
@@ -120,21 +150,19 @@ void usb_queue_string(const char *buf)
  * we just sent something back to host, if there's more waiting send it now
  */
 
-ErrorCode_t VCOM_in(USBD_HANDLE_T hUsb, void *data, uint32_t event) 
+static ErrorCode_t VCOM_in(USBD_HANDLE_T hUsb, void *data, uint32_t event) 
 {
-	struct vcom_data *vcom = data;
-
 	if (event != USB_EVT_IN)
 		return LPC_OK;
 
 	if (!vcom->txlen) {
-		vcom->usbtx_pend = 0;
+		vcom->pend &= ~PEND_TX;
 		return LPC_OK;
 	}
 
-	vcom->usbtx_pend = 1;
-	vcom->txlen -= usbapi->hw->WriteEP(vcom->hUsb, USB_CDC_EP_BULK_IN,
-						      vcom->txBuf, vcom->txlen);
+	vcom->pend |= PEND_TX;
+	vcom->txlen -= usbapi->hw->WriteEP(hUsb, USB_CDC_EP_BULK_IN,
+						     vcom->txBuf, vcom->txlen);
 	return LPC_OK;
 }
 
@@ -142,148 +170,68 @@ ErrorCode_t VCOM_in(USBD_HANDLE_T hUsb, void *data, uint32_t event)
  * something has arrived from the host
  */
 
-ErrorCode_t VCOM_out(USBD_HANDLE_T hUsb, void *data, uint32_t event) 
+static ErrorCode_t VCOM_out(USBD_HANDLE_T hUsb, void *data, uint32_t event) 
 {
-	struct vcom_data *vcom = data;
-
 	if (event != USB_EVT_OUT)
 		return LPC_OK;
 
-	if (vcom->rxlen || vcom->usbrx_pend) {
-		/*
-		 * can't cope with it right now, foreground will get it later
-		 */
-		vcom->usbrx_pend = 1;
+	if (vcom->rxlen || vcom->pend & PEND_RX) {
+		/* can't cope with it right now, foreground will get it later */
+		vcom->pend |= PEND_RX;
+
 		return LPC_OK;
 	}
 
-	vcom->rxlen = usbapi->hw->ReadEP(
-				       hUsb, USB_CDC_EP_BULK_OUT, vcom->rxBuf);
+	vcom->rxlen = usbapi->hw->ReadEP(hUsb, USB_CDC_EP_BULK_OUT, vcom->rxBuf);
 
 	return LPC_OK;
 }
 
 void USB_IRQHandler(void)
 {
-	usbapi->hw->ISR(vcom.hUsb);
+       usbapi->hw->ISR(vcom->hUsb);
 }
 
-/*****************************************************************************
-**   Main Function  main()
-*****************************************************************************/
 int main(void)
 {
-	USBD_API_INIT_PARAM_T usb_param;
-	USBD_CDC_INIT_PARAM_T cdc_param;
-	USB_CORE_DESCS_T desc;
-	USBD_HANDLE_T hUsb, hCdc;
-	ErrorCode_t ret = LPC_OK;
-	uint32_t ep_indx;
-	unsigned long usb_mem_end = 0x10001800;
 	int pos = 0;
 	unsigned char c;
 
 	SystemInit();
 	SystemCoreClockUpdate();
-
 	lava_lmp_pin_init();
-
-	/* get USB API table pointer from magic ROM table address */
-	usbapi = (USBD_API_T *)((*(ROM **)(0x1FFF1FF8))->pUSBD);
-
-	/* enable clocks and pinmux for usb0 */
 	USB_pin_clk_init();
 
-	/* initilize call back structures */
-	memset(&usb_param, 0, sizeof(USBD_API_INIT_PARAM_T));
-	usb_param.usb_reg_base = LPC_USB_BASE;
-	usb_mem_end -= 0x1000;
-	usb_param.mem_base = usb_mem_end;
-	usb_param.mem_size = 0x1000;
-	usb_param.max_num_ep = 3;
+	memset(vcom, 0, sizeof *vcom);
 
-	/* init CDC params */
-	memset(&cdc_param, 0, sizeof(USBD_CDC_INIT_PARAM_T));
-	memset(&vcom, 0, sizeof(struct vcom_data));
+	usbapi = (USBD_API_T *)((*(ROM **)(0x1FFF1FF8))->pUSBD);
 
-	cdc_param.SendBreak = VCOM_SendBreak;
+	usbapi->hw->Init(&vcom->hUsb, &desc, &usb_param);
+	usbapi->cdc->init(vcom->hUsb, &cdc_param, &vcom->hCdc);
+	usbapi->core->RegisterEpHandler(vcom->hUsb,
+			((USB_CDC_EP_BULK_IN & 0xf) << 1) + 1, VCOM_in, vcom);
+	usbapi->core->RegisterEpHandler(vcom->hUsb,
+			(USB_CDC_EP_BULK_OUT & 0xf) << 1, VCOM_out, vcom);
 
-	/* Initialize Descriptor pointers */
-	memset(&desc, 0, sizeof(USB_CORE_DESCS_T));
-	desc.device_desc = (uint8_t *)&VCOM_DeviceDescriptor[0];
-	desc.string_desc = (uint8_t *)&VCOM_StringDescriptor[0];
-	desc.full_speed_desc = (uint8_t *)&VCOM_ConfigDescriptor[0];
-	desc.high_speed_desc = (uint8_t *)&VCOM_ConfigDescriptor[0];
+	NVIC_EnableIRQ(USB_IRQn); /* enable USB0 IRQ */
 
-	usb_param.USB_SOF_Event = VCOM_sof_event;
-
-	/* USB Initialization */
-	ret = usbapi->hw->Init(&hUsb, &desc, &usb_param);  
-	if (ret != LPC_OK)
-		return 1;
-
-	/* init CDC params */
-
-	usb_mem_end -= 0x300;
-	cdc_param.mem_base = usb_mem_end;
-	cdc_param.mem_size = 0x300;
-
-	cdc_param.cif_intf_desc = (uint8_t *)&VCOM_ConfigDescriptor[
-						   USB_CONFIGUARTION_DESC_SIZE];
-	cdc_param.dif_intf_desc = (uint8_t *)&VCOM_ConfigDescriptor[
-			USB_CONFIGUARTION_DESC_SIZE + USB_INTERFACE_DESC_SIZE +
-			0x0013 + USB_ENDPOINT_DESC_SIZE];
-
-	ret = usbapi->cdc->init(hUsb, &cdc_param, &hCdc);
-
-	if (ret != LPC_OK)
-		return 1;
-
-	/* store USB handle */
-	vcom.hUsb = hUsb;
-	vcom.hCdc = hCdc;
-
-	/* allocate transfer buffers */
-	vcom.rxBuf = (uint8_t *)cdc_param.mem_base;
-	vcom.txBuf = (uint8_t *)cdc_param.mem_base + USB_HS_MAX_BULK_PACKET;
-	cdc_param.mem_size -= 4 * USB_HS_MAX_BULK_PACKET;
-
-	/* register endpoint interrupt handler */
-	ep_indx = ((USB_CDC_EP_BULK_IN & 0xf) << 1) + 1;
-	ret = usbapi->core->RegisterEpHandler(hUsb, ep_indx, VCOM_in, &vcom);
-	if (ret != LPC_OK)
-		return 1;
-
-	/* register endpoint interrupt handler */
-	ep_indx = (USB_CDC_EP_BULK_OUT & 0xf) << 1;
-	ret = usbapi->core->RegisterEpHandler(hUsb, ep_indx, VCOM_out, &vcom);
-	if (ret != LPC_OK)
-		return 1;
-
-	/* so we can initially transmit OK */
-	vcom.usbtx_pend = 0;
- 
-	/* enable USB0 IRQ */
-	NVIC_EnableIRQ(USB_IRQn);
-
-	/* USB Connect */
-	usbapi->hw->Connect(hUsb, 1);
+	usbapi->hw->Connect(vcom->hUsb, 1); /* USB Connect */
 
 	/* foreground code feeds board-specific state machine */
 
 	while (1) {
-		if (!vcom.rxlen) {
-			if (vcom.usbrx_pend) {
-				vcom.rxlen = usbapi->hw->ReadEP(
-					hUsb, USB_CDC_EP_BULK_OUT, vcom.rxBuf);
-				pos = 0;
-				vcom.usbrx_pend = 0;
-			}
+		if (!vcom->rxlen) {
+			if (!(vcom->pend & PEND_RX))
+				continue;
+			vcom->rxlen = usbapi->hw->ReadEP(
+				vcom->hUsb, USB_CDC_EP_BULK_OUT, vcom->rxBuf);
+			pos = 0;
+			vcom->pend &= ~PEND_RX;
 			continue;
 		}
-		c = vcom.rxBuf[pos++];
-		if (pos >= vcom.rxlen) {
-			vcom.rxlen = 0;
+		c = vcom->rxBuf[pos++];
+		if (pos >= vcom->rxlen) {
+			vcom->rxlen = 0;
 			pos = 0;
 		}
 

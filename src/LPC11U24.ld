@@ -7,12 +7,13 @@ MEMORY
 {
   /* Define each memory region */
   MFlash32 (rx) : ORIGIN = 0x0, LENGTH = 0x8000 /* 32k */
-  RamLoc4 (rwx) : ORIGIN = 0x100000C0, LENGTH = 0x1740 /* 6k */
+  RamLoc4 (rwx) : ORIGIN = 0x100000C0, LENGTH = 0x740 /* 6K - 4K USB stack mem == 2k */
   RamUsb2 (rwx) : ORIGIN = 0x20004000, LENGTH = 0x800 /* 2k */
 }
   /* Define a symbol for the top of each memory region */
   __top_MFlash32 = 0x0 + 0x8000;
-  __top_RamLoc4 = 0x10000000 + 0x1800;
+  __top_RamLoc4 = 0x10000000 + 0x800; /* because USB stack takes last 4K */
+  __top_RamFull = 0x10000000 + 0x1800; /* because USB stack takes last 4K */
   __top_RamUsb2 = 0x20004000 + 0x800;
 
 ENTRY(ResetISR)
