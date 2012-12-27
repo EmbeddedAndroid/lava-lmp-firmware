@@ -11,7 +11,7 @@ CFLAGS := -mcpu=cortex-m0 -mno-apcs-float \
 	  -mthumb \
 	  -fomit-frame-pointer \
 	  -Wall -Werror -Wstrict-prototypes \
-	  -fverbose-asm
+	  -fverbose-asm  -Wl,-Map=mapfile
 LFLAGS := -mthumb -T LPC11U24.ld
 LIBS :=
 MAIN=$(PROJECT).elf
