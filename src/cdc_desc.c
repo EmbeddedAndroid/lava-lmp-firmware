@@ -49,7 +49,7 @@ ALIGN4 const uint8_t VCOM_DeviceDescriptor[] = {
 	WBVAL(0x0100), /* 1.00 */          /* bcdDevice */
 	0x01,                              /* iManufacturer */
 	0x02,                              /* iProduct */
-	0x03,                              /* iSerialNumber */
+	0x04,                              /* iSerialNumber */
 	0x01                               /* bNumConfigurations: one possible configuration*/
 };
 
@@ -82,7 +82,7 @@ ALIGN4 const uint8_t VCOM_ConfigDescriptor[] = {
 	CDC_COMMUNICATION_INTERFACE_CLASS, /* bInterfaceClass: Communication Interface Class */
 	CDC_ABSTRACT_CONTROL_MODEL,        /* bInterfaceSubClass: Abstract Control Model */
 	0x00,                              /* bInterfaceProtocol: no protocol used */
-	0x04,                              /* iInterface: */
+	0x03,                              /* iInterface: */
 	/* Header Functional Descriptor */
 	0x05,                              /* bLength: Endpoint Descriptor size */
 	CDC_CS_INTERFACE,                  /* bDescriptorType: CS_INTERFACE */
@@ -121,7 +121,7 @@ ALIGN4 const uint8_t VCOM_ConfigDescriptor[] = {
 	CDC_DATA_INTERFACE_CLASS,          /* bInterfaceClass: Data Interface Class */
 	0x00,                              /* bInterfaceSubClass: no subclass available */
 	0x00,                              /* bInterfaceProtocol: no protocol used */
-	0x04,                              /* iInterface: */
+	0x03,                              /* iInterface: */
 	/* Endpoint, EP3 Bulk Out */
 	USB_ENDPOINT_DESC_SIZE,            /* bLength */
 	USB_ENDPOINT_DESCRIPTOR_TYPE,      /* bDescriptorType */
@@ -154,19 +154,20 @@ ALIGN4 const uint8_t VCOM_StringDescriptor[] = {
 	(7 * 2 + 2),                        /* bLength (3 Char + Type + lenght) */
 	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
 	_('L'), _('a'), _('v'), _('a'), _('L'), _('M'), _('P'), 
-	/* Index 0x03: Serial Number */
-	(4 * 2 + 2),                        /* bLength (4 Char + Type + lenght) */
-	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
-	'A', 0,
-	'B', 0,
-	'C', 0,
-	'D', 0,
-	/* Index 0x04: Interface 0, Alternate Setting 0 */
+	/* Index 0x03: Interface 0, Alternate Setting 0 */
 	(4 * 2 + 2),                        /* bLength (4 Char + Type + lenght) */
 	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
 	'V',0,
 	'C',0,
 	'O',0,
 	'M',0,
+	/* Index 0x04: Serial Number */
+	(4 * 2 + 2),                        /* bLength (4 Char + Type + lenght) */
+	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
+	'A', 0,
+	'B', 0,
+	'C', 0,
+	'D', 0,
+
 };
 
