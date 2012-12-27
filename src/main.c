@@ -64,16 +64,11 @@ void USB_pin_clk_init(void)
 	/* Enable AHB clock to the USB block and USB RAM. */
 	LPC_SYSCON->SYSAHBCLKCTRL |= (1 << 14) | (1 << 27);
 
-	/* Pull-down is needed, or internally, VBUS will be floating. This is to
-	address the wrong status in VBUSDebouncing bit in CmdStatus register. It
-	happens on the NXP Validation Board only
-	that a wrong ESD protection chip is used. */
+	LPC_IOCON->PIO0_3 = 1 << 0; /* Secondary function VBUS */
+	LPC_IOCON->PIO0_6 = 1 << 0; /* Secondary function SoftConn */
 
-	LPC_IOCON->PIO0_3 &= ~0x1F; 
-//	LPC_IOCON->PIO0_3 |= (1 << 3) | (1 << 0); /* Secondary function VBUS */
-	LPC_IOCON->PIO0_3 |= 1 << 0; /* Secondary function VBUS */
-	LPC_IOCON->PIO0_6 &= ~7;
-	LPC_IOCON->PIO0_6 |= 1 << 0; /* Secondary function SoftConn */
+	LPC_GPIO->DIR[0] |= 1 << 6;
+	LPC_GPIO->CLR[0] = 1 << 6;
 }
 
 /*
