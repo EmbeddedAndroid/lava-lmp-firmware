@@ -31,6 +31,8 @@ extern const char *hex;
 extern unsigned char hex_char(const char c);
 extern void hex8(unsigned int val, char *buf);
 
+extern int lava_lmp_eeprom(unsigned char *eep, int nWR, unsigned char *from, int len);
+
 extern void usb_queue_tx(const unsigned char *buf, int len);
 extern void usb_queue_string(const char *buf);
 

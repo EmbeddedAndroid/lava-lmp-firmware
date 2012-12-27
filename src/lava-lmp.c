@@ -308,4 +308,22 @@ void lava_lmp_actuate_relay(int n)
 	actuate[n] = RELAY_ACTUATION_MS;
 }
 
+int lava_lmp_eeprom(unsigned char *eep, int nWR, unsigned char *from, int len)
+{
+	unsigned int cmd[5], result[4];
+	void (*iap)(unsigned int cmd[], unsigned int result[]) =
+		(void (*)(unsigned int cmd[], unsigned int result[]))0x1FFF1FF1; 
+
+	cmd[0] = 61 + !!nWR;
+	cmd[1] = (unsigned int)eep;
+	cmd[2] = (unsigned int)from;
+	cmd[3] = len;
+	cmd[4] = 48000; /* 48MHz / 1000 */
+	iap(cmd, result);
+
+	return result[0];
+}
+
+
+
 
