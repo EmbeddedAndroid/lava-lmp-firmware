@@ -86,7 +86,7 @@ static int lava_lmp_gpio_sense( __IO uint32_t *p, int bank, int bit)
 	/* nb GPIO is left in pulled-up input mode */
 
 	/* map floating to 1 (1 is illegal) */
-	if (n == 3)
+	if (n == 2)
 		n = 1;
 
 	return n;
