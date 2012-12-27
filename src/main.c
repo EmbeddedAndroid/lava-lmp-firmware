@@ -180,7 +180,7 @@ int main(void)
 	ErrorCode_t ret = LPC_OK;
 	uint32_t ep_indx;
 	unsigned long usb_mem_end = 0x10001800;
-	int pos;
+	int pos = 0;
 	unsigned char c;
 
 	SystemInit();
@@ -282,10 +282,15 @@ int main(void)
 			continue;
 		}
 		c = vcom.rxBuf[pos++];
-		if (pos == vcom.rxlen)
+		if (pos >= vcom.rxlen) {
 			vcom.rxlen = 0;
+			pos = 0;
+		}
 
-		lava_lmp_rx(c);
+		if (lava_lmp_rx)
+			lava_lmp_rx(c);
+		else
+			usb_queue_string("unknown board\r\n");
 	}
 }
 
