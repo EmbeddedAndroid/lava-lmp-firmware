@@ -188,6 +188,7 @@ int main(void)
 	int pos;
 	unsigned char c;
 
+	SystemInit();
 	SystemCoreClockUpdate();
 
 	lava_lmp_pin_init();
