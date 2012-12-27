@@ -18,6 +18,8 @@ enum rx_states {
 
 void lava_lmp_usb(unsigned char c)
 {
+	char str[10];
+
 	switch (rx_state) {
 	case CMD:
 		switch (c) {
@@ -28,7 +30,8 @@ void lava_lmp_usb(unsigned char c)
 			rx_state = MODE;
 			break;
 		case 'V':
-			/* todo AD7 */
+			hex8(adc7, str);
+			usb_queue_string(str);
 			break;
 		}
 		break;

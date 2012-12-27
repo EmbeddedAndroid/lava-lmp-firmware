@@ -30,6 +30,8 @@ extern void lava_lmp_usb(unsigned char c);
 static int mode;
 static volatile unsigned char actuate[4];
 
+volatile int adc7;
+
 const char *hex = "0123456789ABCDEF";
 
 /* shared by all the implementations for their rx sm, 0 at init */
@@ -151,9 +153,26 @@ void lava_lmp_ls_bus_mode(int bus, enum ls_direction nInOut)
 	LPC_GPIO->CLR[1] = 2 << n;
 }
 
+
+void ADC_IRQHandler (void) 
+{
+	unsigned int reg = LPC_ADC->STAT;
+
+	if (reg & (1 << 7))
+		adc7 = LPC_ADC->DR[7] & 0xffc0;
+	else
+		reg = LPC_ADC->DR[7];
+
+	/* restart */
+
+	LPC_ADC->CR &= 0xFFFFFF00;
+	LPC_ADC->CR |= (1 << 24) | (1 << 7);
+}
+
 void lava_lmp_pin_init(void)
 {
 	int n = 0;
+	int analog = 0;
 
 	rx_state = 0;
 
@@ -190,8 +209,7 @@ void lava_lmp_pin_init(void)
 		LPC_GPIO->DIR[0] |= 0xff << 8;
 		/* LSBD0 DUT_CMD snooping is INPUT */
 		LPC_GPIO->DIR[0] &= ~(1 << 16);
-		/* LSBD7 == AD7 Analogue In */
-		LPC_IOCON->PIO0_23 = (0 << 7) | (0 << 3) | (1 << 0);
+		analog = 1;
 		break;
 	case BOARDID_USB:
 		lava_lmp_rx = lava_lmp_usb;
@@ -200,8 +218,7 @@ void lava_lmp_pin_init(void)
 		LPC_GPIO->SET[0] = 2 << 8;
 		/* LSAD0..1 output */
 		LPC_GPIO->DIR[0] |= 3 << 8;
-		/* LSBD7 == AD7 Analogue In */
-		LPC_IOCON->PIO0_23 = (0 << 7) | (0 << 3) | (1 << 0);
+		analog = 1;
 		break;
 	case BOARDID_HDMI:
 		lava_lmp_rx = lava_lmp_hdmi;
@@ -211,8 +228,7 @@ void lava_lmp_pin_init(void)
 		LPC_GPIO->DIR[0] |= 0x700 << 8;
 		/* LSAD0..2 is INPUT */
 		LPC_GPIO->DIR[0] &= ~(7 << 8);
-		/* LSBD7 == AD7 Analogue In */
-		LPC_IOCON->PIO0_23 = (0 << 7) | (0 << 3) | (1 << 0);
+		analog = 1;
 		break;
 	case BOARDID_LSGPIO:
 		lava_lmp_rx = lava_lmp_lsgpio;
@@ -221,6 +237,27 @@ void lava_lmp_pin_init(void)
 		/* LS Controls are output */
 		LPC_GPIO->DIR[1] |= 0xf << 26;
 		break;
+	}
+
+	if (analog) {
+		LPC_SYSCON->PDRUNCFG &= ~(0x1 << 4);
+		LPC_SYSCON->SYSAHBCLKCTRL |= 1 << 13;
+
+		/* LSBD7 == AD7 Analogue In */
+		LPC_IOCON->PIO0_23 = (0 << 7) | (0 << 3) | (1 << 0);
+
+		  LPC_ADC->CR = ( 0x01 << 0 ) |  /* SEL=1,select channel 0~7 on ADC0 */
+			( ( SystemCoreClock / 4400000 - 1 ) << 8 ) |  /* CLKDIV = Fpclk / 1000000 - 1 */ 
+			( 0 << 16 ) | 		/* BURST = 0, no BURST, software controlled */
+			( 0 << 17 ) |  		/* CLKS = 0, 11 clocks/10 bits */
+			( 0 << 24 ) |  		/* START = 0 A/D conversion stops */
+			( 0 << 27 );		/* EDGE = 0 (CAP/MAT singal falling,trigger A/D conversion) */
+
+		NVIC_EnableIRQ(ADC_IRQn);
+		LPC_ADC->INTEN = 0x080;
+
+		LPC_ADC->CR &= 0xFFFFFF00;
+		LPC_ADC->CR |= (1 << 24) | (1 << 7);
 	}
 
 	/* everything that has relays is OK with them SET by default */

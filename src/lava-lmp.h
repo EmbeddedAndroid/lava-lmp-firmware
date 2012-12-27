@@ -38,6 +38,7 @@ extern unsigned char lava_lmp_bus_read(int bus);
 extern void lava_lmp_bus_write(int bus, unsigned char byte);
 extern void lava_lmp_gpio_bus_mode(int bus, int nInOut);
 extern void lava_lmp_ls_bus_mode(int bus, enum ls_direction);
+extern volatile int adc7;
 
 extern void lava_lmp_pin_init(void);
 extern void lava_lmp_actuate_relay(int n);
