@@ -1,5 +1,6 @@
 SRCS =  main.c \
 	lava-lmp.c \
+	serial.c \
 	lava-lmp-sdmux.c \
 	lava-lmp-lsgpio.c \
 	lava-lmp-hdmi.c \

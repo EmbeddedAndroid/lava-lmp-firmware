@@ -140,34 +140,3 @@ ALIGN4 const uint8_t VCOM_ConfigDescriptor[] = {
 	0                                  /* bLength */
 };
 
-/* USB String Descriptor (optional) */
-ALIGN4 const uint8_t VCOM_StringDescriptor[] = {
-	/* Index 0x00: LANGID Codes */
-	0x04,                              /* bLength */
-	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
-	WBVAL(0x0409), /* US English */    /* wLANGID */
-	/* Index 0x01: Manufacturer */
-	(10 * 2 + 2),                        /* bLength (3 Char + Type + lenght) */
-	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
-	_('L'), _('i'), _('n'), _('a'), _('r'), _('o'), _(' '), _('L'), _('t'), _('d'), 
-	/* Index 0x02: Product */
-	(7 * 2 + 2),                        /* bLength (3 Char + Type + lenght) */
-	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
-	_('L'), _('a'), _('v'), _('a'), _('L'), _('M'), _('P'), 
-	/* Index 0x03: Interface 0, Alternate Setting 0 */
-	(4 * 2 + 2),                        /* bLength (4 Char + Type + lenght) */
-	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
-	'V',0,
-	'C',0,
-	'O',0,
-	'M',0,
-	/* Index 0x04: Serial Number */
-	(4 * 2 + 2),                        /* bLength (4 Char + Type + lenght) */
-	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
-	'A', 0,
-	'B', 0,
-	'C', 0,
-	'D', 0,
-
-};
-

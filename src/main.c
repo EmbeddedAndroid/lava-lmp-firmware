@@ -37,18 +37,54 @@
 #include "lava-lmp.h"
 
 extern uint8_t VCOM_DeviceDescriptor[];
-extern uint8_t VCOM_StringDescriptor[];
 extern uint8_t VCOM_ConfigDescriptor[];
 
-extern char __top_RamFull, __top_RamUsb2;
-#define CDC_SIZE 0x200
-#define USB_SIZE 0x1000
-
 static USBD_API_T *usbapi;
+
+extern void lava_lmp_serial_write(unsigned char c);
+
+#define _(c) c, 0
+
+/* This is the static part of the USB string descriptors */
+
+const uint8_t VCOM_StringDescriptor[] = {
+
+	/* Index 0x00: LANGID Codes */
+	0x04,                              /* bLength */
+	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
+	WBVAL(0x0409), /* US English */    /* wLANGID */
+
+	/* Index 0x01: Manufacturer */
+	(10 * 2 + 2),                        /* bLength (3 Char + Type + len) */
+	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
+	_('L'), _('i'), _('n'), _('a'), _('r'), _('o'), _(' '),
+						_('L'), _('t'), _('d'), 
+
+	/* Index 0x02: Product */
+	(7 * 2 + 2),                        /* bLength (3 Char + Type + len) */
+	USB_STRING_DESCRIPTOR_TYPE,        /* bDescriptorType */
+	_('L'), _('a'), _('v'), _('a'), _('L'), _('M'), _('P'), 
+
+	/* Index 0x03: Interface 0, Alternate Setting 0 */
+	(4 * 2 + 2),			/* bLength (4 Char + Type + len) */
+	USB_STRING_DESCRIPTOR_TYPE,	/* bDescriptorType */\
+	_('V'), _('C'), _('O'), _('M'),
+
+	/* Index 0x04: Serial Number */
+	(16 * 2 + 2),			/* bLength (16 Char + Type + len) */
+	USB_STRING_DESCRIPTOR_TYPE,	/* bDescriptorType */
+
+	/* 
+	 * add 16 x 2-byte wide chars here in copied version
+	 * for effective serial
+	 */
+};
 
 /* this state and buffers go into the middle of the "USB RAM" */
 
 struct vcom_data {
+	unsigned char string_descriptor[sizeof(VCOM_StringDescriptor) +
+		(USB_SERIAL_NUMBER_CHARS * 2)] __attribute__ ((aligned(4)));
 	USBD_HANDLE_T hUsb;
 	USBD_HANDLE_T hCdc;
 	unsigned char rxBuf[USB_HS_MAX_BULK_PACKET];
@@ -56,29 +92,29 @@ struct vcom_data {
 	volatile uint8_t rxlen;
 	volatile uint8_t txlen;
 	volatile uint8_t pend;
+	uint8_t _stuff;
 };
-#define vcom ((struct vcom_data *) \
-			(& __top_RamUsb2 - CDC_SIZE - sizeof(struct vcom_data)))
+
+struct vcom_data _vcom;
+struct vcom_data * const vcom = &_vcom;
 
 static USBD_API_INIT_PARAM_T usb_param = {
 	.usb_reg_base = LPC_USB_BASE,
-	.mem_base = (long)(&__top_RamFull - USB_SIZE),
-	.mem_size = USB_SIZE,
+	.mem_base = 0x10001000,
+	.mem_size = 0x600,
 	.max_num_ep = 3,
 };
 
-static USB_CORE_DESCS_T desc = {
+static const USB_CORE_DESCS_T desc = {
 	.device_desc = VCOM_DeviceDescriptor,
-	.string_desc = VCOM_StringDescriptor,
+	.string_desc = (unsigned char *)&_vcom.string_descriptor,
 	.full_speed_desc = VCOM_ConfigDescriptor,
 	.high_speed_desc = VCOM_ConfigDescriptor,
 };
 
-/* end of usb ram for cdc http://knowledgebase.nxp.com/showthread.php?t=3444 */
-
 static USBD_CDC_INIT_PARAM_T cdc_param = {
-	.mem_base = (long)(& __top_RamUsb2  - CDC_SIZE),
-	.mem_size = CDC_SIZE,
+	.mem_base = 0x10001400,
+	.mem_size = 0x1c0,
 	.cif_intf_desc = &VCOM_ConfigDescriptor[USB_CONFIGUARTION_DESC_SIZE],
 	.dif_intf_desc = &VCOM_ConfigDescriptor[USB_CONFIGUARTION_DESC_SIZE +
 		USB_INTERFACE_DESC_SIZE + 0x0013 + USB_ENDPOINT_DESC_SIZE],
@@ -180,28 +216,36 @@ int main(void)
 {
 	int pos = 0;
 	unsigned char c;
+	unsigned char initial = 1;
 
 	SystemInit();
 	SystemCoreClockUpdate();
 	lava_lmp_pin_init();
 	USB_pin_clk_init();
 
-	memset(vcom, 0, sizeof *vcom);
+	/* sthnthesize custom string descriptor using serial from EEPROM */
+	memcpy(&vcom->string_descriptor, VCOM_StringDescriptor,
+						  sizeof VCOM_StringDescriptor);
+	lava_lmp_eeprom(EEPROM_RESERVED_OFFSET, EEPROM_READ,
+			&vcom->string_descriptor[sizeof VCOM_StringDescriptor],
+			USB_SERIAL_NUMBER_CHARS * 2);
 
 	usbapi = (USBD_API_T *)((*(ROM **)(0x1FFF1FF8))->pUSBD);
-
-	usbapi->hw->Init(&vcom->hUsb, &desc, &usb_param);
-	usbapi->cdc->init(vcom->hUsb, &cdc_param, &vcom->hCdc);
+	if (usbapi->hw->Init(&vcom->hUsb, (USB_CORE_DESCS_T *)&desc, &usb_param))
+		goto spin;
+	if (usbapi->cdc->init(vcom->hUsb, &cdc_param, &vcom->hCdc))
+		goto spin;
 	usbapi->core->RegisterEpHandler(vcom->hUsb,
 			((USB_CDC_EP_BULK_IN & 0xf) << 1) + 1, VCOM_in, vcom);
 	usbapi->core->RegisterEpHandler(vcom->hUsb,
 			(USB_CDC_EP_BULK_OUT & 0xf) << 1, VCOM_out, vcom);
 
 	NVIC_EnableIRQ(USB_IRQn); /* enable USB0 IRQ */
-
 	usbapi->hw->Connect(vcom->hUsb, 1); /* USB Connect */
 
-	/* foreground code feeds board-specific state machine */
+	/* foreground code feeds board-specific state machine
+	 * if first incoming char is '#', enter EEPROM programming state machine
+	 */
 
 	while (1) {
 		if (!vcom->rxlen) {
@@ -219,10 +263,21 @@ int main(void)
 			pos = 0;
 		}
 
+		if (initial && c == '#')
+			lava_lmp_rx = lava_lmp_serial_write;
+
+		initial = 0;
+
 		if (lava_lmp_rx)
 			lava_lmp_rx(c);
 		else
 			usb_queue_string("unknown board\r\n");
+	}
+
+spin:
+	while (1) {
+		LPC_GPIO->SET[1] = 1 << 20;
+		LPC_GPIO->CLR[1] = 1 << 20;
 	}
 }
 

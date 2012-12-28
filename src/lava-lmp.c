@@ -27,7 +27,7 @@ extern void lava_lmp_lsgpio(unsigned char c);
 extern void lava_lmp_hdmi(unsigned char c);
 extern void lava_lmp_usb(unsigned char c);
 
-static int mode;
+int mode;
 static volatile unsigned char actuate[4];
 
 volatile int adc7;
@@ -317,14 +317,14 @@ void lava_lmp_actuate_relay(int n)
 	actuate[n] = RELAY_ACTUATION_MS;
 }
 
-int lava_lmp_eeprom(unsigned char *eep, int nWR, unsigned char *from, int len)
+int lava_lmp_eeprom(unsigned int eep, enum eeprom_dir dir, unsigned char *from, int len)
 {
 	unsigned int cmd[5], result[4];
 	void (*iap)(unsigned int cmd[], unsigned int result[]) =
 		(void (*)(unsigned int cmd[], unsigned int result[]))0x1FFF1FF1; 
 
-	cmd[0] = 61 + !!nWR;
-	cmd[1] = (unsigned int)eep;
+	cmd[0] = 61 + dir;
+	cmd[1] = eep;
 	cmd[2] = (unsigned int)from;
 	cmd[3] = len;
 	cmd[4] = 48000; /* 48MHz / 1000 */
@@ -332,7 +332,5 @@ int lava_lmp_eeprom(unsigned char *eep, int nWR, unsigned char *from, int len)
 
 	return result[0];
 }
-
-
 
 

@@ -25,13 +25,23 @@ enum ls_direction {
 	LS_DIR_OUT,
 };
 
+enum eeprom_dir {
+	EEPROM_WRITE,
+	EEPROM_READ
+};
+
+#define EEPROM_RESERVED_OFFSET 64
+#define USB_SERIAL_NUMBER_CHARS 16
+#define USB_SERIAL_NUMBER_CHARS_AUTOSET 4
+
 extern int rx_state;
+extern int mode;
 extern const char *hex;
 
 extern unsigned char hex_char(const char c);
 extern void hex8(unsigned int val, char *buf);
 
-extern int lava_lmp_eeprom(unsigned char *eep, int nWR, unsigned char *from, int len);
+extern int lava_lmp_eeprom(unsigned int eep, enum eeprom_dir dir, unsigned char *from, int len);
 
 extern void usb_queue_tx(const unsigned char *buf, int len);
 extern void usb_queue_string(const char *buf);
