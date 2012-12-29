@@ -23,7 +23,7 @@ enum rx_states {
 
 /* how to set BUS A for the various modes */
 
-static unsigned char busa_modes[] = {
+static const unsigned char busa_modes[] = {
 	0x05, /* all NC */
 	0x11, /* SDA to HOST */
 	0x14, /* SDA to DUT */
@@ -89,6 +89,7 @@ void lava_lmp_sdmux(unsigned char c)
 		lava_lmp_actuate_relay(RL1_CLR);
 		lava_lmp_bus_write(0, busa_modes[c & 7]);
 		lava_lmp_actuate_relay(RL1_SET);
+		usb_queue_string("mode\n");
 		rx_state = CMD;
 		break;
 	case MS_I:

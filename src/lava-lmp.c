@@ -38,7 +38,7 @@ const char *hex = "0123456789ABCDEF";
 /* shared by all the implementations for their rx sm, 0 at init */
 int rx_state;
 
-static unsigned char gpio1_relay[] = {
+static const unsigned char gpio1_relay[] = {
 	[RL1_CLR] = 20,
 	[RL1_SET] = 21,
 	[RL2_CLR] = 23,
@@ -208,8 +208,8 @@ void lava_lmp_pin_init(void)
 	/* all gpio pulldown */
 	LPC_IOCON->PIO1_20 = (1 << 3) | (0 << 0); /* RL1 CLR */
 	LPC_IOCON->PIO1_21 = (1 << 3) | (0 << 0); /* RL1 SET */
-	LPC_IOCON->PIO0_22 = (1 << 3) | (0 << 0); /* RL2 SET */
-	LPC_IOCON->PIO0_23 = (1 << 3) | (0 << 0); /* RL2 CLR */
+	LPC_IOCON->PIO1_22 = (1 << 3) | (0 << 0); /* RL2 SET */
+	LPC_IOCON->PIO1_23 = (1 << 3) | (0 << 0); /* RL2 CLR */
 
 	/* all output 0 (deactuated) */
 	LPC_GPIO->CLR[1] = 0xf << 20;
@@ -219,6 +219,15 @@ void lava_lmp_pin_init(void)
 
 	for (n = 0; n < 4; n++)
 		actuate[n] = 0;
+
+	LPC_IOCON->PIO0_8 = (1 << 3) | (0 << 0);
+	LPC_IOCON->PIO0_9 = (1 << 3) | (0 << 0);
+	LPC_IOCON->SWCLK_PIO0_10 = (1 << 3) | (1 << 0);
+	LPC_IOCON->TDI_PIO0_11 = (1 << 3) | (1 << 0);
+	LPC_IOCON->TMS_PIO0_12 = (1 << 3) | (1 << 0);
+	LPC_IOCON->TDO_PIO0_13 = (1 << 3) | (1 << 0);
+	LPC_IOCON->TRST_PIO0_14 = (1 << 3) | (1 << 0);
+	LPC_IOCON->SWDIO_PIO0_15 = (1 << 3) | (1 << 0);
 
 	/* board ID, between 0 and 26 */
 
