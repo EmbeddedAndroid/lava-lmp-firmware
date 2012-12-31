@@ -17,6 +17,9 @@ all:	../$(IMG)
 
 .ONESHELL:
 ../$(IMG): $(MAIN)
+	@E=`grep __bss_end__ mapfile | tr -s ' ' | cut -d' ' -f2`
+	@S=`grep _vStackTop mapfile | tr -s ' ' | cut -d' ' -f2`
+	@echo "   $$(( $$S - $$E )) bytes stack / remaining RAM"
 	@$(CROSS)objcopy -O binary $(MAIN) $(BIN)
 #
 # LPC firmware is a binary file with a signature in the 8th vector slot
