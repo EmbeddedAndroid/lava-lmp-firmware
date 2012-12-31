@@ -30,7 +30,7 @@ extern void lava_lmp_usb(unsigned char c);
 int mode;
 static volatile unsigned char actuate[4];
 
-volatile int adc7;
+volatile int adc7, adc7sum, adc7count;
 int bump;
 
 const char *hex = "0123456789ABCDEF";
@@ -67,6 +67,30 @@ void hex8(unsigned int val, char *buf)
 
 	*buf++ = ' ' ;
 	*buf++ = '\0';
+}
+
+int _dec(unsigned int val, char *buf, int nonzero, int d)
+{
+	int n;
+	char *oldbuf = buf;
+
+	while (d) {
+		n = val / d;
+		if (d == 1 || n || nonzero) {
+			*buf++ = '0' + n;
+			nonzero = 1;
+			val -= n * d;
+		}
+		d /= 10;
+	}
+	*buf = '\0';
+
+	return buf - oldbuf;
+}
+
+int dec(unsigned int val, char *buf)
+{
+	return _dec(val, buf, 0, 1000000000);
 }
 
 /* returns 0 = tied low, 1 = floating, 2 = tied high */
@@ -160,9 +184,15 @@ void ADC_IRQHandler (void)
 	unsigned int reg = LPC_ADC->STAT;
 
 	if (reg & (1 << 7))
-		adc7 = LPC_ADC->DR[7] & 0xffc0;
+		adc7sum += LPC_ADC->DR[7] & 0xffc0;
 	else
 		reg = LPC_ADC->DR[7];
+
+	if (++adc7count >= 512) {
+		adc7 = adc7sum >> 9;
+		adc7count = 0;
+		adc7sum = 0;
+	}
 
 	/* restart */
 
@@ -283,7 +313,7 @@ void lava_lmp_pin_init(void)
 		LPC_IOCON->PIO0_23 = (0 << 7) | (0 << 3) | (1 << 0);
 
 		  LPC_ADC->CR = ( 0x01 << 0 ) |  /* SEL=1,select channel 0~7 on ADC0 */
-			( ( SystemCoreClock / 4400000 - 1 ) << 8 ) |  /* CLKDIV = Fpclk / 1000000 - 1 */ 
+			( ( SystemCoreClock / 1100000 - 1 ) << 8 ) |  /* CLKDIV = Fpclk / 1000000 - 1 */ 
 			( 0 << 16 ) | 		/* BURST = 0, no BURST, software controlled */
 			( 0 << 17 ) |  		/* CLKS = 0, 11 clocks/10 bits */
 			( 0 << 24 ) |  		/* START = 0 A/D conversion stops */
@@ -333,4 +363,17 @@ int lava_lmp_eeprom(unsigned int eep, enum eeprom_dir dir, unsigned char *from, 
 	return result[0];
 }
 
+void lava_lmp_write_voltage(void)
+{
+	int n;
+	char str[16];
+
+	n = dec((adc7 * 6600) >> 16, str);
+	str[n++] = 'm';
+	str[n++] = 'V';
+	str[n++] = '\r';
+	str[n++] = '\n';
+	str[n] = '\0';
+	usb_queue_string(str);
+}
 

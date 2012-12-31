@@ -28,7 +28,7 @@ void lava_lmp_hdmi(unsigned char c)
 			rx_state = HPD;
 			break;
 		case 'V':
-			/* todo AD7 */
+			lava_lmp_write_voltage();
 			break;
 		}
 		break;

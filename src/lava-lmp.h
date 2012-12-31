@@ -40,6 +40,8 @@ extern const char *hex;
 
 extern unsigned char hex_char(const char c);
 extern void hex8(unsigned int val, char *buf);
+extern int dec(unsigned int val, char *buf);
+extern int _dec(unsigned int val, char *buf, int nonzero, int d);
 
 extern int lava_lmp_eeprom(unsigned int eep, enum eeprom_dir dir, unsigned char *from, int len);
 
@@ -51,6 +53,7 @@ extern void lava_lmp_bus_write(int bus, unsigned char byte);
 extern void lava_lmp_gpio_bus_mode(int bus, int nInOut);
 extern void lava_lmp_ls_bus_mode(int bus, enum ls_direction);
 extern volatile int adc7;
+extern void lava_lmp_write_voltage(void);
 
 extern void lava_lmp_pin_init(void);
 extern void lava_lmp_actuate_relay(int n);

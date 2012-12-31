@@ -64,6 +64,9 @@ void lava_lmp_sdmux(unsigned char c)
 			count = 0;
 			rx_state = COUNT_C;
 			break;
+		case 'V':
+			lava_lmp_write_voltage();
+			break;
 		}
 		break;
 	case BOOL_P:  /* DUT power passthru state */

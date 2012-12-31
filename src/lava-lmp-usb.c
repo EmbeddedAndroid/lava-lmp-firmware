@@ -11,8 +11,6 @@
 #include <power_api.h>
 #include "lava-lmp.h"
 
-extern int bump;
-
 enum rx_states {
 	CMD,
 	MODE,
@@ -20,24 +18,17 @@ enum rx_states {
 
 void lava_lmp_usb(unsigned char c)
 {
-	char str[10];
-
 	switch (rx_state) {
 	case CMD:
 		switch (c) {
 		case '?':
-			usb_queue_string("lava-lmp-usb 1 1.0\n");
+			usb_queue_string("lava-lmp-usb 1 1.0\r\n");
 			break;
 		case 'M':
 			rx_state = MODE;
 			break;
-		case 'T':
-			hex8(bump, str);
-			usb_queue_string(str);
-			break;
 		case 'V':
-			hex8(adc7, str);
-			usb_queue_string(str);
+			lava_lmp_write_voltage();
 			break;
 		}
 		break;
