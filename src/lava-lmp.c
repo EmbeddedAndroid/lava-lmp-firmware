@@ -20,7 +20,9 @@ enum board_id {
 	BOARDID_USB = (SENSE_LOW * 9) + (SENSE_FLOAT * 3) + SENSE_FLOAT,
 };
 
-void (*lava_lmp_rx)(unsigned char c);
+
+static void lava_lmp_unknown(unsigned char c);
+void (*lava_lmp_rx)(unsigned char c) = lava_lmp_unknown;
 
 extern void lava_lmp_sdmux(unsigned char c);
 extern void lava_lmp_lsgpio(unsigned char c);
@@ -45,6 +47,15 @@ static const unsigned char gpio1_relay[] = {
 	[RL2_SET] = 22,
 };
 
+
+static void lava_lmp_unknown(unsigned char c)
+{
+	char str[10];
+
+	hex8(mode, str);
+	usb_queue_string(str);
+	usb_queue_string(" unknown board\r\n");
+}
 
 unsigned char hex_char(const char c)
 {

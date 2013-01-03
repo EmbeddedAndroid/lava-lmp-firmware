@@ -268,10 +268,7 @@ int main(void)
 
 		initial = 0;
 
-		if (lava_lmp_rx)
-			lava_lmp_rx(c);
-		else
-			usb_queue_string("unknown board\r\n");
+		lava_lmp_rx(c);
 	}
 
 spin:
