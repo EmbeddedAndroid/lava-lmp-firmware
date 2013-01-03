@@ -110,11 +110,11 @@ void lava_lmp_lsgpio(unsigned char c)
 
 	case J_BOOL:
 		if (c & 1) {
-			lava_lmp_actuate_relay(RL1_SET);
-			lava_lmp_actuate_relay(RL2_SET);
-		} else {
 			lava_lmp_actuate_relay(RL1_CLR);
 			lava_lmp_actuate_relay(RL2_CLR);
+		} else {
+			lava_lmp_actuate_relay(RL1_SET);
+			lava_lmp_actuate_relay(RL2_SET);
 		}
 		rx_state = CMD;
 		break;
