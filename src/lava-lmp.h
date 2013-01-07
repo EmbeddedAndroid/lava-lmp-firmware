@@ -60,4 +60,4 @@ extern void lava_lmp_write_voltage(void);
 extern void lava_lmp_pin_init(void);
 extern void lava_lmp_actuate_relay(int n);
 extern void lava_lmp_1ms_tick(void);
-extern void (*lava_lmp_rx)(unsigned char c);
+extern void (*lava_lmp_rx)(int c);

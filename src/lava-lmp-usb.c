@@ -16,8 +16,11 @@ enum rx_states {
 	MODE,
 };
 
-void lava_lmp_usb(unsigned char c)
+void lava_lmp_usb(int c)
 {
+	if (c < 0)
+		return;
+
 	switch (rx_state) {
 	case CMD:
 		switch (c) {

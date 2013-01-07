@@ -105,9 +105,13 @@ bail:
 	LPC_GPIO_PIN_INT->IST = 1 << 0;
 }
 
-void lava_lmp_hdmi(unsigned char c)
+void lava_lmp_hdmi(int c)
 {
 	char str[10];
+
+	if (c < 0) { /* idle */
+
+	}
 
 	switch (rx_state) {
 	case CMD:

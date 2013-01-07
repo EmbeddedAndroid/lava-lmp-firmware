@@ -41,7 +41,7 @@ extern uint8_t VCOM_ConfigDescriptor[];
 
 static USBD_API_T *usbapi;
 
-extern void lava_lmp_serial_write(unsigned char c);
+extern void lava_lmp_serial_write(int c);
 
 #define _(c) c, 0
 
@@ -248,7 +248,12 @@ int main(void)
 	 */
 
 	while (1) {
+
 		if (!vcom->rxlen) {
+
+			/* idle */
+			lava_lmp_rx(-1);
+
 			if (!(vcom->pend & PEND_RX))
 				continue;
 			vcom->rxlen = usbapi->hw->ReadEP(

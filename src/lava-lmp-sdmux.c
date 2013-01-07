@@ -36,8 +36,11 @@ static const unsigned char busa_modes[] = {
 
 static unsigned int count, i, dynamic_switching;
 
-void lava_lmp_sdmux(unsigned char c)
+void lava_lmp_sdmux(int c)
 {
+	if (c < 0)
+		return;
+
 	switch (rx_state) {
 	case CMD:
 		switch (c) {

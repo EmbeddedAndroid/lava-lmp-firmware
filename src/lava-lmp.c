@@ -22,13 +22,13 @@ enum board_id {
 };
 
 
-static void lava_lmp_unknown(unsigned char c);
-void (*lava_lmp_rx)(unsigned char c) = lava_lmp_unknown;
+static void lava_lmp_unknown(int c);
+void (*lava_lmp_rx)(int c) = lava_lmp_unknown;
 
-extern void lava_lmp_sdmux(unsigned char c);
-extern void lava_lmp_lsgpio(unsigned char c);
-extern void lava_lmp_hdmi(unsigned char c);
-extern void lava_lmp_usb(unsigned char c);
+extern void lava_lmp_sdmux(int c);
+extern void lava_lmp_lsgpio(int c);
+extern void lava_lmp_hdmi(int c);
+extern void lava_lmp_usb(int c);
 
 int mode;
 static volatile unsigned char actuate[4];
@@ -49,7 +49,7 @@ static const unsigned char gpio1_relay[] = {
 };
 
 
-static void lava_lmp_unknown(unsigned char c)
+static void lava_lmp_unknown(int c)
 {
 	char str[10];
 

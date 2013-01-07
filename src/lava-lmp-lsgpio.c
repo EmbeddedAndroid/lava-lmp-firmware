@@ -28,8 +28,11 @@ enum rx_states {
 static char buf[5];
 static char keyscan_mode, row, col, up, bus, val;
 
-void lava_lmp_lsgpio(unsigned char c)
+void lava_lmp_lsgpio(int c)
 {
+	if (c < 0)
+		return;
+
 	switch (rx_state) {
 	case CMD:
 		switch (c) {
