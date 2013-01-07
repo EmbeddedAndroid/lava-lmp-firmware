@@ -333,8 +333,8 @@ void lava_lmp_pin_init(void)
 	for (n = 0; n < 4; n++)
 		actuate[n] = 0;
 
-	LPC_IOCON->PIO0_8 = (1 << 5) | (1 << 3) | (0 << 0);
-	LPC_IOCON->PIO0_9 = (1 << 5) | (1 << 3) | (0 << 0);
+	LPC_IOCON->PIO0_8 =  (1 << 3) | (0 << 0);
+	LPC_IOCON->PIO0_9 =  (1 << 3) | (0 << 0);
 	LPC_IOCON->SWCLK_PIO0_10 = (1 << 3) | (1 << 0);
 	LPC_IOCON->TDI_PIO0_11 = (1 << 3) | (1 << 0);
 	LPC_IOCON->TMS_PIO0_12 = (1 << 3) | (1 << 0);
@@ -373,8 +373,6 @@ void lava_lmp_pin_init(void)
 		lava_lmp_rx = lava_lmp_hdmi;
 
 		LPC_SYSCON->SYSAHBCLKCTRL |= (1<<19) | (1<<23) | (1<<24);
-
-		LPC_GPIO_GROUP_INT0->PORT_ENA[0] = (3 << 8);
 		
 		/* deassert scl/sda/hpd forcing */
 		LPC_GPIO->SET[0] = 0x0700 << 8;
@@ -402,6 +400,15 @@ void lava_lmp_pin_init(void)
 		/* group interrupt used to detect SDA transition during SCL 1 */
 		/* ports 0.8 and 0.9 are interesting for group interrupt */
 		LPC_GPIO_GROUP_INT0->PORT_ENA[0] = 3 << 8;
+
+		LPC_IOCON->PIO0_8 = (0 << 3) | (0 << 0);
+		LPC_IOCON->PIO0_9 = (0 << 3) | (0 << 0);
+		LPC_IOCON->SWCLK_PIO0_10 = (0 << 3) | (1 << 0);
+
+		/* prepare derection of SDA inversion while we are idling hi */
+		LPC_GPIO_GROUP_INT0->PORT_POL[0] = 0 << 9 | 0 << 8;
+
+		LPC_GPIO_GROUP_INT0->CTRL = 1 << 1 | 1 << 0;
 		LPC_GPIO_GROUP_INT0->CTRL = 1 << 1 | 1 << 0;
 
 		/* set SCL edge change as NMI */

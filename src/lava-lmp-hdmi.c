@@ -11,14 +11,12 @@
 #include <power_api.h>
 #include "lava-lmp.h"
 
+#define DEBUG_I2C 0
+
 enum rx_states {
 	CMD,
 	HPD,
 };
-
-static unsigned char data;
-static unsigned char bit_counter;
-static unsigned char i2c_shifter;
 
 enum i2c {
 	IS_IDLE,
@@ -29,8 +27,19 @@ enum i2c {
 enum i2c i2c_state;
 
 static unsigned char eeprom[256];
-static unsigned char i2c_ads;
-static unsigned char eeprom_ads;
+
+#ifdef DEBUG_I2C
+static unsigned char dump[256];
+static int dump_pos;
+#endif
+
+void dc(char c)
+{
+#ifdef DEBUG_I2C
+	if (dump_pos < sizeof dump)
+		dump[dump_pos++] = c;
+#endif
+}
 
 struct reading_session {
 	unsigned char ads;
@@ -45,29 +54,43 @@ static unsigned char tail;
 
 void NMI_Handler(void)
 {
-	int newdata = !LPC_GPIO->W0[9];
+	static unsigned char newdata;
+	static unsigned char bit_counter;
+	static unsigned char i2c_shifter;
+	static unsigned char i2c_ads;
+	static unsigned char eeprom_ads;
+
+	newdata = !LPC_GPIO->W0[10];
+	
+	if (newdata)
+		LPC_GPIO->SET[0] = 1 << 12;
+	else
+		LPC_GPIO->CLR[0] = 1 << 12;
 
 	if (LPC_GPIO->W0[8]) { /* SCL is low */
 		if (!(LPC_GPIO_GROUP_INT0->CTRL & 1))
 			goto bail;
 
 		bit_counter = 0;
-		if (data) /* START */
+		if (LPC_GPIO_GROUP_INT0->PORT_POL[0] & (1 << 9)) { /* START */
+			dc('S');
 			i2c_state = IS_ADS_DIR;
-		else /* STOP */
-			i2c_state = IS_IDLE;
+		} else { /* STOP */
+			dc('P');
+//			i2c_state = IS_IDLE;
+		}
 		goto bail;
 	}
 
 	/* SCL has gone high */
 
-	/* prepare derection of SDA inversion while we are high */
+	/* prepare detection of SDA inversion while we are high */
 	LPC_GPIO_GROUP_INT0->PORT_POL[0] = newdata << 9 | 0 << 8;
 	/* edge-trigger, AND combine, clear pending */
 	LPC_GPIO_GROUP_INT0->CTRL = 0 << 2 | 1 << 1 | 1 << 0;
 
 	if (i2c_state == IS_IDLE)
-		goto bail1;
+		goto bail;
 
 	if (bit_counter++ != 8)
 		goto bail2;
@@ -77,33 +100,40 @@ void NMI_Handler(void)
 	switch (i2c_state) {
 	case IS_ADS_DIR:
 		i2c_ads = i2c_shifter;
-		break;
-	case IS_DATA:
-		if ((i2c_ads >> 1) != 0x50)
-			break;
+//		if ((i2c_ads >> 1) != 0x50)
+//			break;
 		if (i2c_ads & 1) { /* reading */
-			eeprom[eeprom_ads++] = i2c_shifter;
-			ring[(head - 1) & 3].bytes++;
-		} else { /* writing: set eeprom address */
-			eeprom_ads = i2c_shifter;
+			eeprom_ads &= 0x80; /* !!! workaround for misread i2c address on laptop */
 			ring[head].ads = eeprom_ads;
 			ring[head].bytes = 0;
 			head = (head + 1) & 3;
 		}
 		break;
+	case IS_DATA:
+//		if ((i2c_ads >> 1) != 0x50)
+//			break;			
+		if (i2c_ads & 1) { /* reading */
+			eeprom[eeprom_ads++] = i2c_shifter;
+			ring[(head - 1) & 3].bytes++;
+		} else /* writing: set eeprom address */
+			eeprom_ads = i2c_shifter;
+		break;
 	default:
 		break;
 	}
 
-	if (newdata) /* NAK */
-		i2c_state = IS_IDLE;
-	else /* ACK */
+	if (newdata) { /* NAK */
+		dc('N');
+//		i2c_state = IS_IDLE;
+	} else { /* ACK */
+		dc('A');
 		i2c_state = IS_DATA;
+	}
 
 bail2:
+	dc('0' + newdata);
 	i2c_shifter = (i2c_shifter << 1) | newdata;
-bail1:
-	data = newdata;
+
 bail:
 	LPC_GPIO_PIN_INT->IST = 1 << 0;
 }
@@ -111,16 +141,17 @@ bail:
 void lava_lmp_hdmi(int c)
 {
 	char str[10];
-	int n;
+	unsigned char n, m;
 	unsigned char cs;
 
 	if (c < 0) { /* idle */
 		if (head != tail) {
 			if (ring[tail].bytes == 0x80) {
 				cs = 0;
+				m = ring[tail].ads;
 				for (n = 0; n < 0x80; n++)
-					cs += eeprom[(ring[tail].ads + n) & 0xff];
-				usb_queue_string("edid read ");
+					cs += eeprom[m++];
+				usb_queue_string("EDID read ");
 				hex4(ring[tail].ads, str);
 				usb_queue_string(str);
 				if (!cs)
@@ -129,8 +160,19 @@ void lava_lmp_hdmi(int c)
 					usb_queue_string(" INVALID\r\n");
 				hexdump(eeprom + ring[tail].ads, 0x80);
 				tail = (tail + 1) & 3;
-			}
+			} else
+				if (((tail + 1) & 3) != head) {
+					usb_queue_string("abandoned EDID read ");
+					hex4(ring[tail].ads, str);
+					usb_queue_string(str);
+					usb_queue_string(" len ");
+					hex4(ring[tail].bytes, str);
+					usb_queue_string(str);
+					usb_queue_string("\r\n");
+					tail = (tail + 1) & 3;
+				}
 		}
+		return;
 	}
 
 	switch (rx_state) {
@@ -141,9 +183,11 @@ void lava_lmp_hdmi(int c)
 			dec(SystemCoreClock, str);
 			usb_queue_string(str);
 			break;
+#ifdef DEBUG_I2C
 		case 's':
-			hexdump(eeprom, sizeof eeprom);
+			hexdump(dump, dump_pos);
 			break;
+#endif
 		case 'H':
 			rx_state = HPD;
 			break;
