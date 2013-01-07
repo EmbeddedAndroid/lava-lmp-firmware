@@ -37,8 +37,9 @@ struct reading_session {
 	unsigned int bytes;
 };
 
-static struct reading_session ring[4];
-static unsigned char head; //, tail;
+static volatile struct reading_session ring[4];
+static volatile unsigned char head;
+static unsigned char tail;
 
 /* on the wire, SCL just changed state */
 
@@ -108,9 +109,26 @@ bail:
 void lava_lmp_hdmi(int c)
 {
 	char str[10];
+	int n;
+	unsigned char cs;
 
 	if (c < 0) { /* idle */
-
+		if (head != tail) {
+			if (ring[tail].bytes == 0x80) {
+				cs = 0;
+				for (n = 0; n < 0x80; n++)
+					cs += eeprom[(ring[tail].ads + n) & 0xff];
+				usb_queue_string("edid read ");
+				hex4(ring[tail].ads, str);
+				usb_queue_string(str);
+				if (!cs)
+					usb_queue_string(" valid\r\n");
+				else
+					usb_queue_string(" INVALID\r\n");
+				hexdump(eeprom + ring[tail].ads, 0x80);
+				tail = (tail + 1) & 3;
+			}
+		}
 	}
 
 	switch (rx_state) {
