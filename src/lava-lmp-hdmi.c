@@ -79,6 +79,8 @@ void NMI_Handler(void)
 		i2c_ads = i2c_shifter;
 		break;
 	case IS_DATA:
+		if ((i2c_ads >> 1) != 0x50)
+			break;
 		if (i2c_ads & 1) { /* reading */
 			eeprom[eeprom_ads++] = i2c_shifter;
 			ring[(head - 1) & 3].bytes++;
