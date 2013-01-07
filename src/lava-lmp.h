@@ -40,8 +40,10 @@ extern const char *hex;
 
 extern unsigned char hex_char(const char c);
 extern void hex8(unsigned int val, char *buf);
+extern void hex4(unsigned int val, char *buf);
 extern int dec(unsigned int val, char *buf);
 extern int _dec(unsigned int val, char *buf, int nonzero, int d);
+extern void hexdump(unsigned char *p, int len);
 
 extern int lava_lmp_eeprom(unsigned int eep, enum eeprom_dir dir, unsigned char *from, int len);
 

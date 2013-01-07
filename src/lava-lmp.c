@@ -10,6 +10,7 @@
 #include "LPC11Uxx.h"            
 #include <power_api.h>
 #include "lava-lmp.h"
+#include <core_cm0.h>
 
 #define RELAY_ACTUATION_MS 20
 
@@ -35,7 +36,7 @@ static volatile unsigned char actuate[4];
 volatile int adc7, adc7sum, adc7count;
 int bump;
 
-const char *hex = "0123456789ABCDEF";
+const char *hex = "0123456789abcdef";
 
 /* shared by all the implementations for their rx sm, 0 at init */
 int rx_state;
@@ -69,15 +70,77 @@ unsigned char hex_char(const char c)
 	return 0x10;
 }
 
-void hex8(unsigned int val, char *buf)
+static void _hexn(unsigned int val, char *buf, int start)
 {
 	int n;
 
-	for (n = 28; n >= 0; n -= 4)
+	for (n = start; n >= 0; n -= 4)
 		*buf++ = hex[(val >> n) & 0xf];
 
 	*buf++ = ' ' ;
 	*buf++ = '\0';
+}
+
+void hex4(unsigned int val, char *buf)
+{
+	_hexn(val, buf, 12);
+}
+
+void hex8(unsigned int val, char *buf)
+{
+	_hexn(val, buf, 28);
+}
+
+void hexdump(unsigned char *p, int len)
+{
+	char str[48];
+	int n, y = 0, m, c;
+
+	str[y++] = '\r';
+	str[y++] = '\n';
+	str[y++] = '\0';
+	usb_queue_string(str);
+	y = 0;
+
+	for (n = 0; n < len; n++) {
+		if (!y) {
+			hex4(n, str);
+			y = 4;
+			str[y++] = ':';
+			str[y++] = ' ' ;
+		}
+		str[y++] = hex[(p[n] >> 4) & 0xf];
+		str[y++] = hex[p[n] & 0xf];
+		if ((n & 7) == 7 || n == len - 1) {
+			m = n;
+			while ((m & 7) != 7) {
+				str[y++] = ' ';
+				str[y++] = ' ';
+				str[y++] = ' ';
+				m++;
+			}
+			str[y++] = ' ';
+			str[y++] = ' ';
+			c = 8;
+			m = n & ~7;
+			if (m + 8 > len)
+				c = len - m;
+			while (c--) {
+				if (p[m] < 32 || p[m] > 126)
+					str[y++] = '.';
+				else
+					str[y++] = p[m];
+				m++;
+			}
+			
+			str[y++] = '\r';
+			str[y++] = '\n';
+			str[y++] = '\0';
+			usb_queue_string(str);
+			y = 0;
+		} else
+			str[y++] = ' ' ;
+	}
 }
 
 int _dec(unsigned int val, char *buf, int nonzero, int d)
@@ -123,11 +186,18 @@ static int lava_lmp_gpio_sense( __IO uint32_t *p, int bank, int bit)
 
 	/* nb GPIO is left in pulled-up input mode */
 
-	/* map floating to 1 (1 is illegal) */
-	if (n == 2)
-		n = 1;
+	switch (n) {
+	case 0:
+		return SENSE_LOW;
+	case 2:
+		return SENSE_FLOAT;
+	case 3:
+		return SENSE_HIGH;
+	}
 
-	return n;
+	/* hm 1 would represent reading the opposite of what was driven... */
+
+	return SENSE_FLOAT;
 }
 
 unsigned char lava_lmp_bus_read(int bus)
@@ -190,7 +260,7 @@ void lava_lmp_ls_bus_mode(int bus, enum ls_direction nInOut)
 }
 
 
-void ADC_IRQHandler (void) 
+void ADC_IRQHandler(void) 
 {
 	unsigned int reg = LPC_ADC->STAT;
 
@@ -244,6 +314,8 @@ void lava_lmp_pin_init(void)
 
 	rx_state = 0;
 
+	LPC_SYSCON->SYSAHBCLKCTRL |= 1 << 6;
+
 	/* relay control */
 
 	/* all gpio pulldown */
@@ -261,8 +333,8 @@ void lava_lmp_pin_init(void)
 	for (n = 0; n < 4; n++)
 		actuate[n] = 0;
 
-	LPC_IOCON->PIO0_8 = (1 << 3) | (0 << 0);
-	LPC_IOCON->PIO0_9 = (1 << 3) | (0 << 0);
+	LPC_IOCON->PIO0_8 = (1 << 5) | (1 << 3) | (0 << 0);
+	LPC_IOCON->PIO0_9 = (1 << 5) | (1 << 3) | (0 << 0);
 	LPC_IOCON->SWCLK_PIO0_10 = (1 << 3) | (1 << 0);
 	LPC_IOCON->TDI_PIO0_11 = (1 << 3) | (1 << 0);
 	LPC_IOCON->TMS_PIO0_12 = (1 << 3) | (1 << 0);
@@ -299,12 +371,42 @@ void lava_lmp_pin_init(void)
 		break;
 	case BOARDID_HDMI:
 		lava_lmp_rx = lava_lmp_hdmi;
+
+		LPC_SYSCON->SYSAHBCLKCTRL |= (1<<19) | (1<<23) | (1<<24);
+
+		LPC_GPIO_GROUP_INT0->PORT_ENA[0] = (3 << 8);
+		
 		/* deassert scl/sda/hpd forcing */
 		LPC_GPIO->SET[0] = 0x0700 << 8;
 		/* LSBD0..2 output */
 		LPC_GPIO->DIR[0] |= 0x700 << 8;
 		/* LSAD0..2 is INPUT */
 		LPC_GPIO->DIR[0] &= ~(7 << 8);
+		LPC_GPIO->DIR[0] |= 0x10 << 8;
+
+		/* notice SCL+SDA go through 74lvcx14 inverter... */
+
+		/* i2c snoop - select gpio int sources */
+		LPC_SYSCON->PINTSEL[0] = (0 * 24) + 8; /* SCL */
+		LPC_SYSCON->PINTSEL[1] = (0 * 24) + 9; /* SDA */
+
+		/* i2c snoop... interrupts on either edge */
+		LPC_GPIO_PIN_INT->ISEL &= ~3;
+		LPC_GPIO_PIN_INT->IENF = 1; /* SCL rising edge on wire (inv) */
+		LPC_GPIO_PIN_INT->IENR = 1; /* SCL falling edge on wire (inv) */
+
+		/* enable rising and falling edges of SCL detection*/
+		LPC_GPIO_PIN_INT->FALL = 1 << 0;
+		LPC_GPIO_PIN_INT->RISE = 1 << 0;
+
+		/* group interrupt used to detect SDA transition during SCL 1 */
+		/* ports 0.8 and 0.9 are interesting for group interrupt */
+		LPC_GPIO_GROUP_INT0->PORT_ENA[0] = 3 << 8;
+		LPC_GPIO_GROUP_INT0->CTRL = 1 << 1 | 1 << 0;
+
+		/* set SCL edge change as NMI */
+		LPC_SYSCON->NMISRC = 0x80000000 | FLEX_INT0_IRQn;
+
 		analog = 1;
 		break;
 	case BOARDID_LSGPIO:
