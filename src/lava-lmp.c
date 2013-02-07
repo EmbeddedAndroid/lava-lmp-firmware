@@ -342,6 +342,12 @@ void lava_lmp_pin_init(void)
 	LPC_IOCON->TRST_PIO0_14 = (1 << 3) | (1 << 0);
 	LPC_IOCON->SWDIO_PIO0_15 = (1 << 3) | (1 << 0);
 
+	LPC_IOCON->PIO0_2 = (1 << 3) | (0 << 0); /* nLED1 */
+	LPC_IOCON->PIO0_7 = (1 << 3) | (0 << 0); /* nLED2 */
+	LPC_GPIO->CLR[0] = 1 << 2;
+	LPC_GPIO->SET[0] = 1 << 7;
+	LPC_GPIO->DIR[0] |= (1 << 2) | (1 << 7);
+
 	/* board ID, between 0 and 26 */
 
 	mode =   lava_lmp_gpio_sense(&LPC_IOCON->PIO1_14, 1, 14) +
