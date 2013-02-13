@@ -361,7 +361,8 @@ void lava_lmp_pin_init(void)
 		LPC_GPIO->CLR[0] = 0xfa << 8;
 		LPC_GPIO->SET[0] = 5 << 8;
 		/* LSAD0..7 all output */
-		LPC_GPIO->DIR[0] |= 0xff << 8;
+		LPC_GPIO->DIR[0] |= (1 << 17) | (0xff << 8);
+		LPC_IOCON->PIO1_1 =  (1 << 3) | (0 << 0);
 		/* LSBD0 DUT_CMD snooping is INPUT */
 		LPC_GPIO->DIR[0] &= ~(1 << 16);
 		analog = 1;

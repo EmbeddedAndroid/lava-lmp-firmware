@@ -24,13 +24,13 @@ enum rx_states {
 /* how to set BUS A for the various modes */
 
 static const unsigned char busa_modes[] = {
-	0x05, /* all NC */
-	0x11, /* SDA to HOST */
-	0x14, /* SDA to DUT */
-	0x89, /* SDB to HOST */
-	0x46, /* SDB to DUT */
-	0x62, /* SDA to HOST, SDB to DUT */
-	0x98, /* SDB to HOST, SDA to DUT */
+	0x05, /* 0: all NC */
+	0x21, /* 1: SDA to HOST */
+	0x24, /* 2: SDA to DUT */
+	0x89, /* 3: SDB to HOST */
+	0x46, /* 4: SDB to DUT */
+	0x52, /* 5: SDA to HOST, SDB to DUT */
+	0xa8, /* 6: SDB to HOST, SDA to DUT */
 	0x05, /* all NC */
 };
 
@@ -92,10 +92,18 @@ void lava_lmp_sdmux(int c)
 		rx_state = CMD;
 		break;
 	case MODE_M:
+
+		/* power the host or not */
+		if ((c & 7) == 1 || (c & 7) == 3 || (c & 7) == 5 || (c & 7) == 6)
+			LPC_GPIO->SET[0] = 1 << 17;
+		else
+			LPC_GPIO->CLR[0] = 1 << 17;
 		lava_lmp_actuate_relay(RL1_CLR);
+		{ volatile int n = 0; while (n < 1000000) n++; }
 		lava_lmp_bus_write(0, busa_modes[c & 7]);
 		lava_lmp_actuate_relay(RL1_SET);
 		usb_queue_string("mode\n");
+		{ volatile int n = 0; while (n < 1000000) n++; }
 		rx_state = CMD;
 		break;
 	case MS_I:
