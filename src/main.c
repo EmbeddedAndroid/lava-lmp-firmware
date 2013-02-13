@@ -80,6 +80,11 @@ const uint8_t VCOM_StringDescriptor[] = {
 	 */
 };
 
+const uint8_t VCOM_UnsetSerial[] = {
+	_('U'), _('n'), _('s'), _('e'), _('t'), _(' '), _('S'), _('e'),
+	_('r'), _('i'), _('a'), _('l'), _(' '), _('N'), _('u'), _('m'),
+};
+
 /* this state and buffers go into the middle of the "USB RAM" */
 
 struct vcom_data {
@@ -229,6 +234,10 @@ int main(void)
 	lava_lmp_eeprom(EEPROM_RESERVED_OFFSET, EEPROM_READ,
 			&vcom->string_descriptor[sizeof VCOM_StringDescriptor],
 			USB_SERIAL_NUMBER_CHARS * 2);
+
+	if (vcom->string_descriptor[sizeof VCOM_StringDescriptor] == 0xff)
+		memcpy(&vcom->string_descriptor[sizeof VCOM_StringDescriptor],
+			VCOM_UnsetSerial, sizeof(VCOM_UnsetSerial));
 
 	usbapi = (USBD_API_T *)((*(ROM **)(0x1FFF1FF8))->pUSBD);
 	if (usbapi->hw->Init(&vcom->hUsb, (USB_CORE_DESCS_T *)&desc, &usb_param))
