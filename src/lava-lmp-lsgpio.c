@@ -103,6 +103,7 @@ void lava_lmp_lsgpio(int c)
 		case 'j':
 			usb_queue_string(json);
 			break;
+		}
 		break;
 
 	case MODE1:

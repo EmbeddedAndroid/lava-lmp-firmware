@@ -19,6 +19,8 @@ enum board_id {
 	BOARDID_LSGPIO = (SENSE_FLOAT * 9) + (SENSE_LOW * 3) + SENSE_LOW,
 	BOARDID_HDMI = (SENSE_FLOAT * 9) + (SENSE_FLOAT * 3) + SENSE_LOW,
 	BOARDID_USB = (SENSE_LOW * 9) + (SENSE_FLOAT * 3) + SENSE_FLOAT,
+	BOARDID_ETH = (SENSE_HIGH * 9) + (SENSE_FLOAT * 3) + SENSE_FLOAT,
+	BOARDID_SATA = (SENSE_HIGH * 9) + (SENSE_HIGH * 3) + SENSE_FLOAT,
 };
 
 
@@ -29,6 +31,8 @@ extern void lava_lmp_sdmux(int c);
 extern void lava_lmp_lsgpio(int c);
 extern void lava_lmp_hdmi(int c);
 extern void lava_lmp_usb(int c);
+extern void lava_lmp_eth(int c);
+extern void lava_lmp_sata(int c);
 
 int mode;
 static volatile unsigned char actuate[4];
@@ -429,6 +433,12 @@ void lava_lmp_pin_init(void)
 		lava_lmp_ls_bus_mode(1, LS_DIR_IN);
 		/* LS Controls are output */
 		LPC_GPIO->DIR[1] |= 0xf << 26;
+		break;
+	case BOARDID_ETH:
+		lava_lmp_rx = lava_lmp_eth;
+		break;
+	case BOARDID_SATA:
+		lava_lmp_rx = lava_lmp_sata;
 		break;
 	}
 

@@ -5,6 +5,8 @@ SRCS =  main.c \
 	lava-lmp-lsgpio.c \
 	lava-lmp-hdmi.c \
 	lava-lmp-usb.c \
+	lava-lmp-eth.c \
+	lava-lmp-sata.c \
 	cr_startup_lpc11u.c \
 	cdc_desc.c \
 	system_LPC11Uxx.c

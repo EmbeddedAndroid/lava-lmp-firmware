@@ -1,4 +1,4 @@
-# Copyright (C) 2012 Linaro Ltd
+# Copyright (C) 2012-2013 Linaro Ltd
 # Author: Andy Green <andy.green@linaro.org>
 # Licensed under LGPL2
 #
