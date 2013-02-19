@@ -1,7 +1,7 @@
 /*
  * lava-lmp firmware: hdmi board
  *
- * Copyright (C) 2012 Linaro Ltd
+ * Copyright (C) 2012-2013 Linaro Ltd
  * Author: Andy Green <andy.green@linaro.org>
  *
  * Licensed under LGPL2
@@ -49,7 +49,7 @@ static char json_state1[] =
 		"["
 			"\"MON.5V\":\""
 ;
-/*
+
 static char json_state2[] =
 			"\","
 			"\"DUT.HPD\":\""
@@ -63,7 +63,7 @@ static char json_state4[] =
 		"]"
 	"}\x04"
 ;
-*/
+
 #define DEBUG_I2C 0
 
 enum rx_states {
@@ -208,33 +208,36 @@ void lava_lmp_hdmi(int c)
 				LPC_GPIO->CLR[0] = 1 << 2;
 		}
 
-		if (head != tail) {
-			if (ring[tail].bytes == 0x80) {
-				cs = 0;
-				m = ring[tail].ads;
-				for (n = 0; n < 0x80; n++)
-					cs += eeprom[m++];
-				usb_queue_string("EDID read ");
-				hex4(ring[tail].ads, str);
-				usb_queue_string(str);
-				if (!cs)
-					usb_queue_string(" valid\r\n");
-				else
-					usb_queue_string(" INVALID\r\n");
-				hexdump(eeprom + ring[tail].ads, 0x80);
-				tail = (tail + 1) & 3;
-			} else
-				if (((tail + 1) & 3) != head) {
-					usb_queue_string("abandoned EDID read ");
-					hex4(ring[tail].ads, str);
-					usb_queue_string(str);
-					usb_queue_string(" len ");
-					hex4(ring[tail].bytes, str);
-					usb_queue_string(str);
-					usb_queue_string("\r\n");
-					tail = (tail + 1) & 3;
-				}
+		if (head == tail)
+			return;
+		if (ring[tail].bytes == 0x80) {
+			cs = 0;
+			m = ring[tail].ads;
+			for (n = 0; n < 0x80; n++)
+				cs += eeprom[m++];
+			usb_queue_string("EDID read ");
+			hex4(ring[tail].ads, str);
+			usb_queue_string(str);
+			if (!cs)
+				usb_queue_string(" valid\r\n");
+			else
+				usb_queue_string(" INVALID\r\n");
+			hexdump(eeprom + ring[tail].ads, 0x80);
+			tail = (tail + 1) & 3;
+			return;
 		}
+		if (((tail + 1) & 3) == head)
+			return;
+
+		usb_queue_string("abandoned EDID read ");
+		hex4(ring[tail].ads, str);
+		usb_queue_string(str);
+		usb_queue_string(" len ");
+		hex4(ring[tail].bytes, str);
+		usb_queue_string(str);
+		usb_queue_string("\r\n");
+		tail = (tail + 1) & 3;
+
 		return;
 	}
 
