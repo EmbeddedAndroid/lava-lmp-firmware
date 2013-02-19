@@ -12,7 +12,7 @@
 #include "lava-lmp.h"
 
 static char json[] = {
-	"{"
+	"\x01board.json\x02{"
 		"\"if\":["
 			"{\"name\":\"HDMI\"},"
 			"{\"pins\":[\"5V\",\"HPD\",\"EDID\"]}"
@@ -45,20 +45,15 @@ static char json[] = {
 };
 
 static char json_state1[] =
-	"{"
+	"\x01state.json\x02{"
 		"["
-			"\"MON.5V\":\""
-;
-
-static char json_state2[] =
-			"\","
 			"\"DUT.HPD\":\""
 ;
-static char json_state3[] =
+static char json_state2[] =
 			"\","
 			"\"DUT.EDID\":\""
 ;
-static char json_state4[] =
+static char json_state3[] =
 			"\""
 		"]"
 	"}\x04"
@@ -102,6 +97,16 @@ struct reading_session {
 static volatile struct reading_session ring[4];
 static volatile unsigned char head;
 static unsigned char tail;
+
+void issue_json_state(void)
+{
+	usb_queue_string(json_state1);
+	usb_queue_string("NULL");
+	usb_queue_string(json_state2);
+	usb_queue_string("MON.EDID");
+	usb_queue_string(json_state3);
+}
+
 
 /* on the wire, SCL just changed state */
 
@@ -202,10 +207,14 @@ void lava_lmp_hdmi(int c)
 
 		q++;
 		if ((q & 0x7fff) == 0) {
-			if (q & 0x8000)
+/*
+		if (q & 0x8000)
 				LPC_GPIO->SET[0] = 1 << 2;
 			else
 				LPC_GPIO->CLR[0] = 1 << 2;
+*/
+			lava_lmp_write_voltage("\x01report-DUT.5V\x02");
+			return;
 		}
 
 		if (head == tail)
@@ -215,27 +224,27 @@ void lava_lmp_hdmi(int c)
 			m = ring[tail].ads;
 			for (n = 0; n < 0x80; n++)
 				cs += eeprom[m++];
-			usb_queue_string("EDID read ");
 			hex4(ring[tail].ads, str);
 			usb_queue_string(str);
 			if (!cs)
-				usb_queue_string(" valid\r\n");
+				usb_queue_string("\x01valid-edid-rx.hex\x02");
 			else
-				usb_queue_string(" INVALID\r\n");
+				usb_queue_string("\x01invalid-edid-rx.hex\x02");
 			hexdump(eeprom + ring[tail].ads, 0x80);
 			tail = (tail + 1) & 3;
+			usb_queue_string("\x04");
 			return;
 		}
 		if (((tail + 1) & 3) == head)
 			return;
 
-		usb_queue_string("abandoned EDID read ");
+		usb_queue_string("\x01""abandoned-EDID-rx.hex\x02");
 		hex4(ring[tail].ads, str);
 		usb_queue_string(str);
-		usb_queue_string(" len ");
+		usb_queue_string(" ");
 		hex4(ring[tail].bytes, str);
 		usb_queue_string(str);
-		usb_queue_string("\r\n");
+		usb_queue_string("\x04");
 		tail = (tail + 1) & 3;
 
 		return;
@@ -244,11 +253,6 @@ void lava_lmp_hdmi(int c)
 	switch (rx_state) {
 	case CMD:
 		switch (c) {
-		case '?':
-			usb_queue_string("lava-lmp-hdmi 1 1.0\r\n");
-			//dec(SystemCoreClock, str);
-			//usb_queue_string(str);
-			break;
 #if 0
 		case 'S':
 			hexdump(dump, dump_pos);
@@ -257,15 +261,12 @@ void lava_lmp_hdmi(int c)
 		case 'H':
 			rx_state = HPD;
 			break;
-		case 'V':
-			lava_lmp_write_voltage();
-			break;
 		case 'j':
 			usb_queue_string(json);
 			break;
 		case 's':
-			usb_queue_string(json_state1);
-			break;//if ()
+			issue_json_state();
+			break;
 		}
 		break;
 	case HPD:  /* HPD connectivity mode */
@@ -282,6 +283,7 @@ void lava_lmp_hdmi(int c)
 			lava_lmp_actuate_relay(RL2_CLR);
 			break;
 		}
+		issue_json_state();
 		rx_state = CMD;
 		break;
 	default:

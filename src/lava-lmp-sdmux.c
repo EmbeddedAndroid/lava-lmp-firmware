@@ -12,7 +12,7 @@
 #include "lava-lmp.h"
 
 static char json[] = {
-	"{"
+	"\x01board.json\x02{"
 		"\"if\":["
 			"{"
 				"\"name\":\"SD\","
@@ -80,15 +80,18 @@ static unsigned int count, i, dynamic_switching;
 
 void lava_lmp_sdmux(int c)
 {
-	if (c < 0)
+	static int q;
+
+	if (c < 0) {
+		q++;
+		if ((q & 0x7fff) == 0)
+			lava_lmp_write_voltage("\x01report-DUT.pwr\x02");
 		return;
+	}
 
 	switch (rx_state) {
 	case CMD:
 		switch (c) {
-		case '?':
-			usb_queue_string("lava-lmp-sdmux 1 1.0\n");
-			break;
 		case 'P':
 			rx_state = BOOL_P;
 			break;
@@ -108,9 +111,6 @@ void lava_lmp_sdmux(int c)
 		case 'C':
 			count = 0;
 			rx_state = COUNT_C;
-			break;
-		case 'V':
-			lava_lmp_write_voltage();
 			break;
 		case 'j':
 			usb_queue_string(json);

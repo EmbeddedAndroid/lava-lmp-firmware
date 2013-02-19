@@ -12,7 +12,7 @@
 #include "lava-lmp.h"
 
 static char json[] = {
-	"{"
+	"\x01board.json\x02{"
 		"\"if\":["
 			"{"
 				"\"name\":\"sata\""
@@ -52,9 +52,6 @@ void lava_lmp_sata(int c)
 	switch (rx_state) {
 	case CMD:
 		switch (c) {
-		case '?':
-			usb_queue_string("lava-lmp-sata 1 1.0\n");
-			break;
 		case 'J':
 			rx_state = J_BOOL;
 			break;

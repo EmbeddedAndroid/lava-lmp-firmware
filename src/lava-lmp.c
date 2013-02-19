@@ -11,6 +11,7 @@
 #include <power_api.h>
 #include "lava-lmp.h"
 #include <core_cm0.h>
+#include <string.h>
 
 #define RELAY_ACTUATION_MS 20
 
@@ -51,7 +52,6 @@ static const unsigned char gpio1_relay[] = {
 	[RL2_CLR] = 23,
 	[RL2_SET] = 22,
 };
-
 
 static void lava_lmp_unknown(int c)
 {
@@ -500,16 +500,15 @@ int lava_lmp_eeprom(unsigned int eep, enum eeprom_dir dir, unsigned char *from, 
 	return result[0];
 }
 
-void lava_lmp_write_voltage(void)
+void lava_lmp_write_voltage(const char *hdr)
 {
 	int n;
-	char str[16];
+	char str[32];
 
-	n = dec((adc7 * 6600) >> 16, str);
-	str[n++] = 'm';
-	str[n++] = 'V';
-	str[n++] = '\r';
-	str[n++] = '\n';
+	n = strlen(hdr);
+	strcpy(str, hdr);
+	n += dec((adc7 * 6600) >> 16, &str[n]);
+	str[n++] = '\x04';
 	str[n] = '\0';
 	usb_queue_string(str);
 }

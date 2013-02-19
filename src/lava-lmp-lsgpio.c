@@ -12,7 +12,7 @@
 #include "lava-lmp.h"
 
 static char json[] = {
-	"{"
+	"\x01board.json\x02{"
 		"\"if\":["
 			"{"
 				"\"name\":\"bus8\","
@@ -75,9 +75,6 @@ void lava_lmp_lsgpio(int c)
 	switch (rx_state) {
 	case CMD:
 		switch (c) {
-		case '?':
-			usb_queue_string("lava-lmp-lsgpio 1 1.0\n");
-			break;
 		case 'M':
 			rx_state = MODE1;
 			break;

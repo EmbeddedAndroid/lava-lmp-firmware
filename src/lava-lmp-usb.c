@@ -12,7 +12,7 @@
 #include "lava-lmp.h"
 
 static char json[] = {
-	"{"
+	"\x01board.json\x02{"
 		"\"if\":["
 			"{"
 				"\"name\":\"USB-minib\","
@@ -52,20 +52,20 @@ enum rx_states {
 
 void lava_lmp_usb(int c)
 {
-	if (c < 0)
+	static int q;
+
+	if (c < 0) {
+		q++;
+		if ((q & 0x7fff) == 0)
+			lava_lmp_write_voltage("\x01report-DUT.5V\x02");
 		return;
+	}
 
 	switch (rx_state) {
 	case CMD:
 		switch (c) {
-		case '?':
-			usb_queue_string("lava-lmp-usb 1 1.0\r\n");
-			break;
 		case 'M':
 			rx_state = MODE;
-			break;
-		case 'V':
-			lava_lmp_write_voltage();
 			break;
 		case 'j':
 			usb_queue_string(json);
