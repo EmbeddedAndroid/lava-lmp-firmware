@@ -26,10 +26,13 @@ static unsigned char str[32]  __attribute__ ((aligned(4)));
  * __... = 12 arbitrary characters sent over serial at programming time
  */
 
-void lava_lmp_serial_write(unsigned char c)
+void lava_lmp_serial_write(int c)
 {
 	volatile int n;
 	int r;
+
+	if (c < 0)
+		return;
 
 	switch (rx_state) {
 	case CMD:

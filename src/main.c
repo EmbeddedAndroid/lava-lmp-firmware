@@ -118,7 +118,7 @@ static const USB_CORE_DESCS_T desc = {
 };
 
 static USBD_CDC_INIT_PARAM_T cdc_param = {
-	.mem_base = 0x10001400,
+	.mem_base = 0x10001600,
 	.mem_size = 0x1c0,
 	.cif_intf_desc = &VCOM_ConfigDescriptor[USB_CONFIGUARTION_DESC_SIZE],
 	.dif_intf_desc = &VCOM_ConfigDescriptor[USB_CONFIGUARTION_DESC_SIZE +
@@ -168,7 +168,17 @@ void usb_queue_tx(const unsigned char *buf, int len)
 
 void usb_queue_string(const char *buf)
 {
-	usb_queue_tx((unsigned char *)buf, strlen(buf));
+	int n = strlen(buf);
+	int m;
+
+	while (n) {
+		m = n;
+		if (m > 30)
+			m = 30;
+		usb_queue_tx((unsigned char *)buf, m);
+		buf += m;
+		n -= m;
+	}
 }
 
 /*
@@ -200,7 +210,7 @@ static ErrorCode_t VCOM_out(USBD_HANDLE_T hUsb, void *data, uint32_t event)
 	if (event != USB_EVT_OUT)
 		return LPC_OK;
 
-	if (vcom->rxlen || vcom->pend & PEND_RX) {
+	if (vcom->rxlen || (vcom->pend & PEND_RX)) {
 		/* can't cope with it right now, foreground will get it later */
 		vcom->pend |= PEND_RX;
 
@@ -235,7 +245,7 @@ int main(void)
 			&vcom->string_descriptor[sizeof VCOM_StringDescriptor],
 			USB_SERIAL_NUMBER_CHARS * 2);
 
-	if (vcom->string_descriptor[sizeof VCOM_StringDescriptor] == 0xff)
+	if (vcom->string_descriptor[sizeof VCOM_StringDescriptor + 1] == 0xff)
 		memcpy(&vcom->string_descriptor[sizeof VCOM_StringDescriptor],
 			VCOM_UnsetSerial, sizeof(VCOM_UnsetSerial));
 
