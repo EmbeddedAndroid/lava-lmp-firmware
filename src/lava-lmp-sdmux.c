@@ -11,6 +11,48 @@
 #include <power_api.h>
 #include "lava-lmp.h"
 
+static char json[] = {
+	"{"
+		"\"if\":["
+			"{"
+				"\"name\":\"SD\","
+				"\"pins\":[\"pwr\"]"
+			"},{"
+				"\"name\":\"uSD\""
+			"}"
+		"],"
+		"\"io\":["
+			"{"
+				"\"if\":\"SD\","
+				"\"name\":\"DUT\","
+				"\"grp\":\"0\""
+			"},{"
+				"\"if\":\"SD\","
+				"\"name\":\"HOST\","
+				"\"grp\":\"1\""
+			"}"
+		"],"
+		"\"int\":["
+			"{"
+				"\"if\":\"uSD\","
+				"\"name\":\"uSDA\""
+			"},{"
+				"\"if\":\"uSD\","
+				"\"name\":\"uSDB\""
+			"}"
+		"],"
+		"\"mux\":["
+			"{"
+				"\"sink\":\"DUT\","
+				"\"src\":[\"NULL\",\"uSDA\",\"uSDB\"]"
+			"},{"
+				"\"sink\":\"HOST\","
+				"\"src\":[\"NULL\",\"uSDA\",\"uSDB\"]"
+			"}"
+		"]"
+	"}\x04"
+};
+
 enum rx_states {
 	CMD,
 	BOOL_P,
@@ -69,6 +111,9 @@ void lava_lmp_sdmux(int c)
 			break;
 		case 'V':
 			lava_lmp_write_voltage();
+			break;
+		case 'j':
+			usb_queue_string(json);
 			break;
 		}
 		break;

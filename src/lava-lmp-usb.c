@@ -11,6 +11,40 @@
 #include <power_api.h>
 #include "lava-lmp.h"
 
+static char json[] = {
+	"{"
+		"\"if\":["
+			"{"
+				"\"name\":\"USB-minib\","
+				"\"pins\":[\"5V\"]"
+			"},{"
+				"\"name\":\"USB-A\""
+			"}"
+		"],"
+		"\"io\":["
+			"{"
+				"\"if\":\"USB-minib\","
+				"\"name\":\"DUT\","
+				"\"grp\":\"0\""
+			"},{"
+				"\"if\":\"USB-A\","
+				"\"name\":\"dev\","
+				"\"grp\":\"1\""
+			"},{"
+				"\"if\":\"USB-minib\","
+				"\"name\":\"host\","
+				"\"grp\":\"1\""
+			"}"
+		"],"
+		"\"mux\":["
+			"{"
+				"\"sink\":\"DUT\","
+				"\"src\":[\"NULL\",\"dev\",\"host\"]"
+			"}"
+		"]"
+	"}\x04"
+};
+
 enum rx_states {
 	CMD,
 	MODE,
@@ -32,6 +66,9 @@ void lava_lmp_usb(int c)
 			break;
 		case 'V':
 			lava_lmp_write_voltage();
+			break;
+		case 'j':
+			usb_queue_string(json);
 			break;
 		}
 		break;

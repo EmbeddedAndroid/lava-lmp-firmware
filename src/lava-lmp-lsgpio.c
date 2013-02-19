@@ -11,6 +11,45 @@
 #include <power_api.h>
 #include "lava-lmp.h"
 
+static char json[] = {
+	"{"
+		"\"if\":["
+			"{"
+				"\"name\":\"bus8\","
+				"\"pins\":[\"0\",\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\"]"
+				"\"state\":[{\"name\":\"dir\",\"s\":[\"in\",\"out\"]},{\"name\":\"data\"}]"
+			"},{"
+				"\"name\":\"jack4\""
+			"}"
+		"],"
+		"\"io\":["
+			"{"
+				"\"if\":\"bus8\","
+				"\"name\":\"A\","
+				"\"grp\":\"1\""
+			"},{"
+				"\"if\":\"bus8\","
+				"\"name\":\"B\","
+				"\"grp\":\"1\""
+			"},{"
+				"\"if\":\"jack4\","
+				"\"name\":\"audio\","
+				"\"grp\":\"1\""
+			"},{"
+				"\"if\":\"jack4\","
+				"\"name\":\"DUT\","
+				"\"grp\":\"0\""
+			"}"
+		"],"
+		"\"mux\":["
+			"{"
+				"\"sink\":\"DUT\","
+				"\"src\":[\"NULL\",\"audio\"]"
+			"}"
+		"]"
+	"}\x04"
+};
+
 enum rx_states {
 	CMD,
 	MODE1,
@@ -61,7 +100,9 @@ void lava_lmp_lsgpio(int c)
 			buf[4] = '\0';
 			usb_queue_string(buf);
 			break;
-		}
+		case 'j':
+			usb_queue_string(json);
+			break;
 		break;
 
 	case MODE1:

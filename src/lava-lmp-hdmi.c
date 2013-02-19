@@ -11,6 +11,59 @@
 #include <power_api.h>
 #include "lava-lmp.h"
 
+static char json[] = {
+	"{"
+		"\"if\":["
+			"{\"name\":\"HDMI\"},"
+			"{\"pins\":[\"5V\",\"HPD\",\"EDID\"]}"
+		"],"
+		"\"io\":["
+			"{"
+				"\"if\":\"HDMI\","
+				"\"name\":\"DUT\","
+				"\"grp\":\"0\""
+			"},{"
+				"\"if\":\"HDMI\","
+				"\"name\":\"MON\","
+				"\"grp\":\"1\""
+			"}"
+		"],"
+		"\"int\":[\"fake-edid\"],"
+		"\"mux\":["
+			"{"
+				"\"sink\":\"MON.5V\","
+				"\"src\":[\"NULL\",\"DUT.5V\"]"
+			"},{"
+				"\"sink\":\"DUT.HPD\","
+				"\"src\":[\"NULL\",\"MON.HPD\"]"
+			"},{"
+				"\"sink\":\"DUT.EDID\","
+				"\"src\":[\"MON.EDID\",\"fake-edid\"]"
+			"}"
+		"]"
+	"}\x04"
+};
+
+static char json_state1[] =
+	"{"
+		"["
+			"\"MON.5V\":\""
+;
+/*
+static char json_state2[] =
+			"\","
+			"\"DUT.HPD\":\""
+;
+static char json_state3[] =
+			"\","
+			"\"DUT.EDID\":\""
+;
+static char json_state4[] =
+			"\""
+		"]"
+	"}\x04"
+;
+*/
 #define DEBUG_I2C 0
 
 enum rx_states {
@@ -143,8 +196,18 @@ void lava_lmp_hdmi(int c)
 	char str[10];
 	unsigned char n, m;
 	unsigned char cs;
+	static int q;
 
 	if (c < 0) { /* idle */
+
+		q++;
+		if ((q & 0x7fff) == 0) {
+			if (q & 0x8000)
+				LPC_GPIO->SET[0] = 1 << 2;
+			else
+				LPC_GPIO->CLR[0] = 1 << 2;
+		}
+
 		if (head != tail) {
 			if (ring[tail].bytes == 0x80) {
 				cs = 0;
@@ -180,11 +243,11 @@ void lava_lmp_hdmi(int c)
 		switch (c) {
 		case '?':
 			usb_queue_string("lava-lmp-hdmi 1 1.0\r\n");
-			dec(SystemCoreClock, str);
-			usb_queue_string(str);
+			//dec(SystemCoreClock, str);
+			//usb_queue_string(str);
 			break;
-#ifdef DEBUG_I2C
-		case 's':
+#if 0
+		case 'S':
 			hexdump(dump, dump_pos);
 			break;
 #endif
@@ -194,6 +257,12 @@ void lava_lmp_hdmi(int c)
 		case 'V':
 			lava_lmp_write_voltage();
 			break;
+		case 'j':
+			usb_queue_string(json);
+			break;
+		case 's':
+			usb_queue_string(json_state1);
+			break;//if ()
 		}
 		break;
 	case HPD:  /* HPD connectivity mode */
