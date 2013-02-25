@@ -36,7 +36,14 @@ enum eeprom_dir {
 
 extern int rx_state;
 extern int mode;
+extern int idle_ok;
 extern const char *hex;
+extern const char *json_report_open;
+extern const char *json_board_start;
+
+extern char ascii_serial[];
+extern void lmp_default_cmd(int c, const char *json);
+extern void lmp_issue_report_header(const char *name);
 
 extern unsigned char hex_char(const char c);
 extern void hex8(unsigned int val, char *buf);
@@ -55,7 +62,7 @@ extern void lava_lmp_bus_write(int bus, unsigned char byte);
 extern void lava_lmp_gpio_bus_mode(int bus, int nInOut);
 extern void lava_lmp_ls_bus_mode(int bus, enum ls_direction);
 extern volatile int adc7;
-extern void lava_lmp_write_voltage(const char *hdr);
+extern void lava_lmp_write_voltage(void);
 
 extern void lava_lmp_pin_init(void);
 extern void lava_lmp_actuate_relay(int n);

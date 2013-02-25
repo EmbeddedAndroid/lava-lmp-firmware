@@ -102,6 +102,7 @@ struct vcom_data {
 
 struct vcom_data _vcom;
 struct vcom_data * const vcom = &_vcom;
+char ascii_serial[USB_SERIAL_NUMBER_CHARS + 1];
 
 static USBD_API_INIT_PARAM_T usb_param = {
 	.usb_reg_base = LPC_USB_BASE,
@@ -232,22 +233,26 @@ int main(void)
 	int pos = 0;
 	unsigned char c;
 	unsigned char initial = 1;
+	unsigned char *p = &_vcom.string_descriptor[sizeof VCOM_StringDescriptor];
+	int n;
 
 	SystemInit();
 	SystemCoreClockUpdate();
 	lava_lmp_pin_init();
 	USB_pin_clk_init();
 
-	/* sthnthesize custom string descriptor using serial from EEPROM */
+	/* synthesize custom string descriptor using serial from EEPROM */
 	memcpy(&vcom->string_descriptor, VCOM_StringDescriptor,
 						  sizeof VCOM_StringDescriptor);
-	lava_lmp_eeprom(EEPROM_RESERVED_OFFSET, EEPROM_READ,
-			&vcom->string_descriptor[sizeof VCOM_StringDescriptor],
+	lava_lmp_eeprom(EEPROM_RESERVED_OFFSET, EEPROM_READ, p,
 			USB_SERIAL_NUMBER_CHARS * 2);
 
-	if (vcom->string_descriptor[sizeof VCOM_StringDescriptor + 1] == 0xff)
-		memcpy(&vcom->string_descriptor[sizeof VCOM_StringDescriptor],
-			VCOM_UnsetSerial, sizeof(VCOM_UnsetSerial));
+	if (*p == 0xff)
+		memcpy(p, VCOM_UnsetSerial, sizeof(VCOM_UnsetSerial));
+
+	for (n = 0; n < USB_SERIAL_NUMBER_CHARS; n++)
+		ascii_serial[n] = p[n * 2];
+	ascii_serial[USB_SERIAL_NUMBER_CHARS] = '\0';
 
 	usbapi = (USBD_API_T *)((*(ROM **)(0x1FFF1FF8))->pUSBD);
 	if (usbapi->hw->Init(&vcom->hUsb, (USB_CORE_DESCS_T *)&desc, &usb_param))

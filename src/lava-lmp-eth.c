@@ -11,8 +11,9 @@
 #include <power_api.h>
 #include "lava-lmp.h"
 
-static char json[] = {
-	"\x01board.json\x02{"
+static const char *json =
+		"\","
+		"\"type\":\"lmp-eth\","
 		"\"if\":["
 			"{"
 				"\"name\":\"RJ45\""
@@ -36,7 +37,7 @@ static char json[] = {
 			"}"
 		"]"
 	"}\x04"
-};
+;
 
 enum rx_states {
 	CMD,
@@ -55,8 +56,8 @@ void lava_lmp_eth(int c)
 		case 'J':
 			rx_state = J_BOOL;
 			break;
-		case 'j':
-			usb_queue_string(json);
+		default:
+			lmp_default_cmd(c, json);
 			break;
 		}
 		break;

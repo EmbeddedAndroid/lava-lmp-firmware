@@ -11,12 +11,13 @@
 #include <power_api.h>
 #include "lava-lmp.h"
 
-static char json[] = {
-	"\x01board.json\x02{"
+static const char *json =
+		"\","
+		"\"type\":\"lmp-lsgpio\","
 		"\"if\":["
 			"{"
 				"\"name\":\"bus8\","
-				"\"pins\":[\"0\",\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\"]"
+				"\"pins\":[\"0\",\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\"],"
 				"\"state\":[{\"name\":\"dir\",\"s\":[\"in\",\"out\"]},{\"name\":\"data\"}]"
 			"},{"
 				"\"name\":\"jack4\""
@@ -48,7 +49,7 @@ static char json[] = {
 			"}"
 		"]"
 	"}\x04"
-};
+;
 
 enum rx_states {
 	CMD,
@@ -97,8 +98,8 @@ void lava_lmp_lsgpio(int c)
 			buf[4] = '\0';
 			usb_queue_string(buf);
 			break;
-		case 'j':
-			usb_queue_string(json);
+		default:
+			lmp_default_cmd(c, json);
 			break;
 		}
 		break;

@@ -11,11 +11,15 @@
 #include <power_api.h>
 #include "lava-lmp.h"
 
-static char json[] = {
-	"\x01board.json\x02{"
+
+static const char *json =
+		"\","
+		"\"type\":\"lmp-hdmi\","
 		"\"if\":["
-			"{\"name\":\"HDMI\"},"
-			"{\"pins\":[\"5V\",\"HPD\",\"EDID\"]}"
+			"{"
+				"\"name\":\"HDMI\","
+				"\"pins\":[\"5V\",\"HPD\",\"EDID\"]"
+			"}"
 		"],"
 		"\"io\":["
 			"{"
@@ -28,7 +32,11 @@ static char json[] = {
 				"\"grp\":\"1\""
 			"}"
 		"],"
-		"\"int\":[\"fake-edid\"],"
+		"\"int\":["
+			"{"
+				"\"name\":\"fake-edid\""
+			"}"
+		"],"
 		"\"mux\":["
 			"{"
 				"\"sink\":\"MON.5V\","
@@ -40,21 +48,6 @@ static char json[] = {
 				"\"sink\":\"DUT.EDID\","
 				"\"src\":[\"MON.EDID\",\"fake-edid\"]"
 			"}"
-		"]"
-	"}\x04"
-};
-
-static char json_state1[] =
-	"\x01state.json\x02{"
-		"["
-			"\"DUT.HPD\":\""
-;
-static char json_state2[] =
-			"\","
-			"\"DUT.EDID\":\""
-;
-static char json_state3[] =
-			"\""
 		"]"
 	"}\x04"
 ;
@@ -100,11 +93,11 @@ static unsigned char tail;
 
 void issue_json_state(void)
 {
-	usb_queue_string(json_state1);
+	lmp_issue_report_header("\"DUT.HPD\",\"val\":\"");
 	usb_queue_string("NULL");
-	usb_queue_string(json_state2);
-	usb_queue_string("MON.EDID");
-	usb_queue_string(json_state3);
+	usb_queue_string("\"},{\"name\":\"DUT.EDID\",\"val\":\"");
+	usb_queue_string("NULL");
+	usb_queue_string("\"}]}\x04");
 }
 
 
@@ -206,14 +199,16 @@ void lava_lmp_hdmi(int c)
 	if (c < 0) { /* idle */
 
 		q++;
-		if ((q & 0x7fff) == 0) {
+		if (idle_ok && (q & 0x7fff) == 0) {
 /*
 		if (q & 0x8000)
 				LPC_GPIO->SET[0] = 1 << 2;
 			else
 				LPC_GPIO->CLR[0] = 1 << 2;
 */
-			lava_lmp_write_voltage("\x01report-DUT.5V\x02");
+			lmp_issue_report_header("DUT.5V\",\"val\":\"");
+			lava_lmp_write_voltage();
+			usb_queue_string("\",\"unit\":\"mV\"}]}\x04");
 			return;
 		}
 
@@ -224,20 +219,22 @@ void lava_lmp_hdmi(int c)
 			m = ring[tail].ads;
 			for (n = 0; n < 0x80; n++)
 				cs += eeprom[m++];
+			lmp_issue_report_header("rxedid\",\"ads\":\"0x");
 			hex4(ring[tail].ads, str);
 			usb_queue_string(str);
 			if (!cs)
-				usb_queue_string("\x01valid-edid-rx.hex\x02");
+				usb_queue_string("\",\"valid\":\"1\",\"val\":\"");
 			else
-				usb_queue_string("\x01invalid-edid-rx.hex\x02");
+				usb_queue_string("\",\"valid\":\"0\",\"val\":\"");
 			hexdump(eeprom + ring[tail].ads, 0x80);
 			tail = (tail + 1) & 3;
-			usb_queue_string("\x04");
+			usb_queue_string("\"]}\x04");
 			return;
 		}
 		if (((tail + 1) & 3) == head)
 			return;
 
+/*
 		usb_queue_string("\x01""abandoned-EDID-rx.hex\x02");
 		hex4(ring[tail].ads, str);
 		usb_queue_string(str);
@@ -245,6 +242,7 @@ void lava_lmp_hdmi(int c)
 		hex4(ring[tail].bytes, str);
 		usb_queue_string(str);
 		usb_queue_string("\x04");
+*/
 		tail = (tail + 1) & 3;
 
 		return;
@@ -261,11 +259,11 @@ void lava_lmp_hdmi(int c)
 		case 'H':
 			rx_state = HPD;
 			break;
-		case 'j':
-			usb_queue_string(json);
-			break;
 		case 's':
 			issue_json_state();
+			break;
+		default:
+			lmp_default_cmd(c, json);
 			break;
 		}
 		break;

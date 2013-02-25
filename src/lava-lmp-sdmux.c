@@ -11,8 +11,9 @@
 #include <power_api.h>
 #include "lava-lmp.h"
 
-static char json[] = {
-	"\x01board.json\x02{"
+static const char *json =
+		"\","
+		"\"type\":\"lmp-sdmux\","
 		"\"if\":["
 			"{"
 				"\"name\":\"SD\","
@@ -51,7 +52,7 @@ static char json[] = {
 			"}"
 		"]"
 	"}\x04"
-};
+;
 
 enum rx_states {
 	CMD,
@@ -84,8 +85,11 @@ void lava_lmp_sdmux(int c)
 
 	if (c < 0) {
 		q++;
-		if ((q & 0x7fff) == 0)
-			lava_lmp_write_voltage("\x01report-DUT.pwr\x02");
+		if (idle_ok && (q & 0x7fff) == 0) {
+			lmp_issue_report_header("DUT.pwr\",\"val\":\"");
+			lava_lmp_write_voltage();
+			usb_queue_string("\",\"unit\":\"mV\"}]}\x04");
+		}
 		return;
 	}
 
@@ -112,8 +116,8 @@ void lava_lmp_sdmux(int c)
 			count = 0;
 			rx_state = COUNT_C;
 			break;
-		case 'j':
-			usb_queue_string(json);
+		default:
+			lmp_default_cmd(c, json);
 			break;
 		}
 		break;

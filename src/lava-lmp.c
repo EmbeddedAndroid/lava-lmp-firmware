@@ -24,6 +24,7 @@ enum board_id {
 	BOARDID_SATA = (SENSE_HIGH * 9) + (SENSE_HIGH * 3) + SENSE_FLOAT,
 };
 
+int idle_ok;
 
 static void lava_lmp_unknown(int c);
 void (*lava_lmp_rx)(int c) = lava_lmp_unknown;
@@ -34,6 +35,39 @@ extern void lava_lmp_hdmi(int c);
 extern void lava_lmp_usb(int c);
 extern void lava_lmp_eth(int c);
 extern void lava_lmp_sata(int c);
+
+const char *json_report_open =
+	"\x02{"
+		"\"schema\":\"org.linaro.lmp.report\","
+		"\"serial\":\""
+;
+const char *json_board_start =
+	"\x02{"
+		"\"schema\":\"org.linaro.lmp.board\","
+		"\"serial\":\""
+;
+
+void lmp_issue_report_header(const char *name)
+{
+	usb_queue_string(json_report_open);
+	usb_queue_string(ascii_serial);
+	usb_queue_string("\",\"report\":[{\"name\":\"");
+	usb_queue_string(name);
+}
+
+void lmp_default_cmd(int c, const char *json)
+{
+	switch (c) {
+	case 'j':
+		usb_queue_string(json_board_start);
+		usb_queue_string(ascii_serial);
+		usb_queue_string(json);
+		idle_ok = 1;
+		break;
+	default:
+		break;
+	}
+}
 
 int mode;
 static volatile unsigned char actuate[4];
@@ -500,16 +534,11 @@ int lava_lmp_eeprom(unsigned int eep, enum eeprom_dir dir, unsigned char *from, 
 	return result[0];
 }
 
-void lava_lmp_write_voltage(const char *hdr)
+void lava_lmp_write_voltage(void)
 {
-	int n;
-	char str[32];
+	char str[20];
 
-	n = strlen(hdr);
-	strcpy(str, hdr);
-	n += dec((adc7 * 6600) >> 16, &str[n]);
-	str[n++] = '\x04';
-	str[n] = '\0';
+	dec((adc7 * 6600) >> 16, str);
 	usb_queue_string(str);
 }
 
