@@ -45,33 +45,36 @@ enum lejp_reasons {
 	LEJP_REJECT_MP_DELIM_ISTACK = -19,
 	LEJP_REJECT_NUM_TOO_LONG = -20,
 	LEJP_REJECT_MP_C_OR_E_NEITHER = -21,
-	LEJP_REJECT_UNKNOWN = -22
+	LEJP_REJECT_UNKNOWN = -22,
+	LEJP_REJECT_CALLBACK = -23
 };
 
+#define LEJP_FLAG_CB_IS_VALUE 64
+
 enum lejp_callbacks {
-	LEJPCB_CONSTRUCTED,
-	LEJPCB_DESTRUCTED,
+	LEJPCB_CONSTRUCTED	= 0,
+	LEJPCB_DESTRUCTED	= 1,
 
-	LEJPCB_START,
-	LEJPCB_COMPLETE,
-	LEJPCB_FAILED,
+	LEJPCB_START		= 2,
+	LEJPCB_COMPLETE		= 3,
+	LEJPCB_FAILED		= 4,
 
-	LEJPCB_PAIR_NAME,
+	LEJPCB_PAIR_NAME	= 5,
 
-	LEJPCB_VAL_TRUE,
-	LEJPCB_VAL_FALSE,
-	LEJPCB_VAL_NULL,
-	LEJPCB_VAL_NUM_INT,
-	LEJPCB_VAL_NUM_FLOAT,
-	LEJPCB_VAL_STR_START,
-	LEJPCB_VAL_STR_CHUNK,
-	LEJPCB_VAL_STR_END,
+	LEJPCB_VAL_TRUE		= LEJP_FLAG_CB_IS_VALUE | 6,
+	LEJPCB_VAL_FALSE	= LEJP_FLAG_CB_IS_VALUE | 7,
+	LEJPCB_VAL_NULL		= LEJP_FLAG_CB_IS_VALUE | 8,
+	LEJPCB_VAL_NUM_INT	= LEJP_FLAG_CB_IS_VALUE | 9,
+	LEJPCB_VAL_NUM_FLOAT	= LEJP_FLAG_CB_IS_VALUE | 10,
+	LEJPCB_VAL_STR_START	= 11, /* notice handle separately */
+	LEJPCB_VAL_STR_CHUNK	= LEJP_FLAG_CB_IS_VALUE | 12,
+	LEJPCB_VAL_STR_END	= LEJP_FLAG_CB_IS_VALUE | 13,
 
-	LEJPCB_ARRAY_START,
-	LEJPCB_ARRAY_END,
+	LEJPCB_ARRAY_START	= 14,
+	LEJPCB_ARRAY_END	= 15,
 
-	LEJPCB_OBJECT_START,
-	LEJPCB_OBJECT_END
+	LEJPCB_OBJECT_START	= 16,
+	LEJPCB_OBJECT_END	= 17
 };
 
 /**
@@ -161,6 +164,7 @@ struct _lejp_stack {
 	char s; /* lejp_state stack*/
 	char p;	/* path length */
 	char i; /* index array length */
+	char b; /* user bitfield */
 };
 
 struct lejp_ctx {
@@ -190,54 +194,21 @@ struct lejp_ctx {
 	unsigned char count_paths;
 
 	/* user helper */
-	unsigned char hit;
-	unsigned char hit_path_len;
+	unsigned char path_match;
+	unsigned char path_match_len;
 };
-
-/**
- * lejp_construct: prepare a struct lejp_ctx for use
- *
- * @ctx:	pointer to your struct lejp_ctx
- * @callback:	your user callback which will received parsed tokens
- * @paths:	your array of name elements you are interested in
- * @count_paths: ARRAY_SIZE() of @paths
- *
- * Prepares your context struct for use with lejp
- */
 
 extern void
 lejp_construct(struct lejp_ctx *ctx,
 	       char (*callback)(struct lejp_ctx *ctx, char reason), void *user,
 	       const char * const *paths, unsigned char paths_count);
 
-/**
- * lejp_destruct: retire a previously constructed struct lejp_ctx
- *
- * @ctx:	pointer to your struct lejp_ctx
- *
- * lejp does not perform any allocations, but since your user code might, this
- * provides a one-time LEJPCB_DESTRUCTED callback at destruction time where
- * you can clean up in your callback.
- */
-
 extern void
 lejp_destruct(struct lejp_ctx *ctx);
 
-/**
- * lejp_parse: interpret some more incoming data incrementally
- *
- * @ctx:	previously constructed parsing context
- * @json:	char buffer with the new data to interpret
- * @len:	amount of data in the buffer
- *
- * Because lejp is a stream parser, it incrementally parses as new data
- * becomes available, maintaining all state in the context struct.  So an
- * incomplete JSON is a normal situation, getting you a LEJP_CONTINUE
- * return, signalling there's no error but to call again with more data when
- * it comes to complete the parsing.  Successful parsing completes with a
- * 0 or positive integer indicating how much of the last input buffer was
- * unused.
- */
-
 extern int
-lejp_parse(struct lejp_ctx *ctx, const char *json, int len);
+lejp_parse(struct lejp_ctx *ctx, const unsigned char *json, int len);
+
+extern void
+lejp_change_callback(struct lejp_ctx *ctx,
+		       char (*callback)(struct lejp_ctx *ctx, char reason));

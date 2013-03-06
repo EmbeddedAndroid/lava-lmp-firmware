@@ -11,14 +11,14 @@
 #include <power_api.h>
 #include "lava-lmp.h"
 
-static const char *json =
-		"\","
-		"\"type\":\"lmp-lsgpio\","
+const char * const json_info_lsgpio =
+		","
+		"\"type\":\"lsgpio\","
 		"\"if\":["
 			"{"
 				"\"name\":\"bus8\","
 				"\"pins\":[\"0\",\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\"],"
-				"\"state\":[{\"name\":\"dir\",\"s\":[\"in\",\"out\"]},{\"name\":\"data\"}]"
+				"\"setting\":[{\"name\":\"dir\",\"s\":[\"in\",\"out\"]},{\"name\":\"data\"}]"
 			"},{"
 				"\"name\":\"jack4\""
 			"}"
@@ -45,126 +45,141 @@ static const char *json =
 		"\"mux\":["
 			"{"
 				"\"sink\":\"DUT\","
-				"\"src\":[\"NULL\",\"audio\"]"
+				"\"src\":[null,\"audio\"]"
+			"}"
+		"],"
+		"\"modes\":["
+			"{"
+				"\"name\":\"audio\","
+				"\"options\":["
+					"{"
+						"\"name\":\"passthru\","
+						"\"mux\":[{\"DUT\":\"audio\"}]"
+					"},{"
+						"\"name\":\"disconnect\","
+						"\"mux\":[{\"DUT\":null}]"
+					"}"
+				"]"
 			"}"
 		"]"
 	"}\x04"
 ;
 
-enum rx_states {
-	CMD,
-	MODE1,
-	MODE2,
-	MODE3,
-	KEY_ROW,
-	KEY_COL,
-	KEY_UPDOWN,
-	W_BUS,
-	W_HEX1,
-	W_HEX2,
-	J_BOOL
-};
+/*
+ * json:
+ * 	{
+ * 		"schema": "org.linaro.lmp.lsgpio",
+ * 		"mode": { "bus": 0|1, "type": "output"|"input" },
+ * 		"write": { "bus": 0|1, "data": "XX" },
+ * 		"jack": "on" | "off",
+ * 	}
+ */
 
-static char buf[5];
-static char keyscan_mode, row, col, up, bus, val;
-
-void lava_lmp_lsgpio(int c)
+char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 {
-	if (c < 0)
-		return;
+	static char bus;
+	unsigned char n;
+	unsigned char u;
 
-	switch (rx_state) {
-	case CMD:
-		switch (c) {
-		case 'M':
-			rx_state = MODE1;
-			break;
-		case 'J':
-			rx_state = J_BOOL;
-			break;
-		case 'K':
-			rx_state = KEY_ROW;
-			break;
-		case 'W':
-			rx_state = W_BUS;
-			break;
-		case 'R':
-			c = lava_lmp_bus_read(0);
-			buf[0] = hex[c >> 4];
-			buf[1] = hex[c & 0xf];
-			c = lava_lmp_bus_read(1);
-			buf[2] = hex[c >> 4];
-			buf[3] = hex[c & 0xf];
-			buf[4] = '\0';
-			usb_queue_string(buf);
-			break;
-		default:
-			lmp_default_cmd(c, json);
-			break;
+	if (!ctx)
+		return 0;
+	if (reason == REASON_SEND_REPORT) {
+		char str[10];
+		char n;
+
+		lmp_issue_report_header("lsgpio\",\"bus\":[");
+		for (n = 0; n < 2; n++) {
+			usb_queue_string("{\"type\":\"");
+			if (lava_lmp_get_bus_mode(n))
+				usb_queue_string("output");
+			else
+				usb_queue_string("input");
+			usb_queue_string("\",\"data\":\"");
+			hex2(lava_lmp_bus_read(n), str);
+			usb_queue_string(str);
+			usb_queue_string("\"}");
+			if (n == 0)
+				usb_queue_string(",");
 		}
-		break;
+		usb_queue_string("]},{\"name\":\"jack\",\"state\":");
+		usb_queue_true_or_false(LPC_GPIO->PIN[0] & 1 << 7);
+		usb_queue_string("}]}\x04");
+		return 0;
+	}
 
-	case MODE1:
-		lava_lmp_gpio_bus_mode(0, !!(c == 'I'));
-		rx_state = MODE2;
-		break;
+	if (!(reason & LEJP_FLAG_CB_IS_VALUE)) {
+		switch (ctx->path_match) {
+		case LMPPT_schema:
+			if (strcmp(&ctx->buf[15], "lsgpio"))
+				return -1; /* fail it */
+			return 0;
+		case 4: /* mode */
+			if (!strcmp(&ctx->path[ctx->path_match_len], "bus"))
+				bus = ctx->buf[0] - '0';
+			if (!strcmp(&ctx->path[ctx->path_match_len], "type")) {
+				if (bus < 0) /* need to have the bus first */
+					return -1;
+				if (!strcmp(ctx->buf, "output"))
+					lava_lmp_ls_bus_mode(bus, 0);
+				if (!strcmp(ctx->buf, "input"))
+					lava_lmp_ls_bus_mode(bus, 1);
+				lmp_json_callback_board_lsgpio(ctx,
+							REASON_SEND_REPORT);
+				return 0;
+			}
 
-	case MODE2:
-		lava_lmp_gpio_bus_mode(1, !!(c == 'I'));
-		rx_state = MODE3;
-		break;
+			return 0;
+		case 5: /* write */
+			if (!strcmp(&ctx->path[ctx->path_match_len], "bus")) {
+				bus = ctx->buf[0] - '0';
+				return 0;
+			}
+			if (!strcmp(&ctx->path[ctx->path_match_len], "write")) {
+				if (bus < 0) /* need to have the bus first */
+					return -1;
+				if (ctx->npos != 2)
+					return -1;
+				n = hex_char(ctx->buf[0]);
+				if (n == 0x10)
+					return -1;
+				u = n << 4;
+				n = hex_char(ctx->buf[0]);
+				if (n == 0x10)
+					return -1;
+				u |= n;
+				lava_lmp_bus_write(bus, u);
+				lmp_json_callback_board_lsgpio(ctx,
+							REASON_SEND_REPORT);
 
-	case MODE3:
-		keyscan_mode = !! (c == 'K');
-		rx_state = CMD;
-		break;
+				return 0;
+			}
 
-	case KEY_ROW:
-		row = c & 7;
-		rx_state = KEY_COL;
-		break;
+			return 0;
 
-	case KEY_COL:
-		col = c & 7;
-		rx_state = KEY_UPDOWN;
-		break;
+		case 6: /* jack */
+			if (ctx->buf[0] & 1) {
+				lava_lmp_actuate_relay(RL1_CLR);
+				lava_lmp_actuate_relay(RL2_CLR);
+				LPC_GPIO->CLR[0] = 1 << 7;
+			} else {
+				lava_lmp_actuate_relay(RL1_SET);
+				lava_lmp_actuate_relay(RL2_SET);
+				LPC_GPIO->SET[0] = 1 << 7;
+			}
+			lmp_json_callback_board_lsgpio(ctx,
+						REASON_SEND_REPORT);
 
-	case KEY_UPDOWN:
-		up = c & 1;
-		/* todo */
-		rx_state = CMD;
-		break;
-
-	case W_BUS:
-		bus = c & 1;
-		rx_state = W_HEX1;
-		break;
-
-	case W_HEX1:
-		val = hex_char(c) << 4;
-		rx_state = W_HEX2;
-		break;
-
-	case W_HEX2:
-		val |= hex_char(c);
-		lava_lmp_bus_write(bus, val);
-		rx_state = CMD;
-		break;
-
-	case J_BOOL:
-		if (c & 1) {
-			lava_lmp_actuate_relay(RL1_CLR);
-			lava_lmp_actuate_relay(RL2_CLR);
-		} else {
-			lava_lmp_actuate_relay(RL1_SET);
-			lava_lmp_actuate_relay(RL2_SET);
+			return 0;
 		}
-		rx_state = CMD;
-		break;
+	}
 
-	default:
-		rx_state = CMD;
+	switch (reason) {
+	case LEJPCB_START:
+		bus = 0; /* ie, not told */
 		break;
-	}	
+	case LEJPCB_COMPLETE:
+		break;
+	}
+
+	return 0;
 }
-

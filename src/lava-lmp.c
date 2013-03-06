@@ -25,49 +25,22 @@ enum board_id {
 };
 
 int idle_ok;
+char (*lmp_json_callback_board)(struct lejp_ctx *ctx, char reason) = NULL;
+const char * json_info;
 
-static void lava_lmp_unknown(int c);
-void (*lava_lmp_rx)(int c) = lava_lmp_unknown;
+extern const char * const json_info_sdmux;
+extern const char * const json_info_lsgpio;
+extern const char * const json_info_hdmi;
+extern const char * const json_info_usb;
+extern const char * const json_info_eth;
+extern const char * const json_info_sata;
 
-extern void lava_lmp_sdmux(int c);
-extern void lava_lmp_lsgpio(int c);
-extern void lava_lmp_hdmi(int c);
-extern void lava_lmp_usb(int c);
-extern void lava_lmp_eth(int c);
-extern void lava_lmp_sata(int c);
-
-const char *json_report_open =
-	"\x02{"
-		"\"schema\":\"org.linaro.lmp.report\","
-		"\"serial\":\""
-;
-const char *json_board_start =
-	"\x02{"
-		"\"schema\":\"org.linaro.lmp.board\","
-		"\"serial\":\""
-;
-
-void lmp_issue_report_header(const char *name)
-{
-	usb_queue_string(json_report_open);
-	usb_queue_string(ascii_serial);
-	usb_queue_string("\",\"report\":[{\"name\":\"");
-	usb_queue_string(name);
-}
-
-void lmp_default_cmd(int c, const char *json)
-{
-	switch (c) {
-	case 'j':
-		usb_queue_string(json_board_start);
-		usb_queue_string(ascii_serial);
-		usb_queue_string(json);
-		idle_ok = 1;
-		break;
-	default:
-		break;
-	}
-}
+extern char lmp_json_callback_board_hdmi(struct lejp_ctx *ctx, char reason);
+extern char lmp_json_callback_board_sdmux(struct lejp_ctx *ctx, char reason);
+extern char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason);
+extern char lmp_json_callback_board_usb(struct lejp_ctx *ctx, char reason);
+extern char lmp_json_callback_board_eth(struct lejp_ctx *ctx, char reason);
+extern char lmp_json_callback_board_sata(struct lejp_ctx *ctx, char reason);
 
 int mode;
 static volatile unsigned char actuate[4];
@@ -75,7 +48,7 @@ static volatile unsigned char actuate[4];
 volatile int adc7, adc7sum, adc7count;
 int bump;
 
-const char *hex = "0123456789abcdef";
+const char * const hex = "0123456789abcdef";
 
 /* shared by all the implementations for their rx sm, 0 at init */
 int rx_state;
@@ -87,13 +60,14 @@ static const unsigned char gpio1_relay[] = {
 	[RL2_SET] = 22,
 };
 
-static void lava_lmp_unknown(int c)
-{
-	char str[10];
+const char * const tf[] = {
+	"false",
+	"true"
+};
 
-	hex8(mode, str);
-	usb_queue_string(str);
-	usb_queue_string(" unknown board\r\n");
+void usb_queue_true_or_false(char b)
+{
+	usb_queue_string(tf[b & 1]);
 }
 
 unsigned char hex_char(const char c)
@@ -117,6 +91,11 @@ static void _hexn(unsigned int val, char *buf, int start)
 
 	*buf++ = ' ' ;
 	*buf++ = '\0';
+}
+
+void hex2(unsigned char val, char *buf)
+{
+	_hexn(val, buf, 4);
 }
 
 void hex4(unsigned int val, char *buf)
@@ -272,6 +251,17 @@ void lava_lmp_gpio_bus_mode(int bus, int nInOut)
 		LPC_GPIO->DIR[0] &= ~(0xff << bus);
 }
 
+/* 0 = input, 1 = output */
+char lava_lmp_get_bus_mode(int bus)
+{
+	if (bus)
+		bus = 16;
+	else
+		bus = 8;
+
+	return !!((LPC_GPIO->DIR[0] >> bus) & 0xff);
+}
+
 void lava_lmp_ls_bus_mode(int bus, enum ls_direction nInOut)
 {
 	int n = 26;
@@ -383,7 +373,7 @@ void lava_lmp_pin_init(void)
 	LPC_IOCON->PIO0_2 = (1 << 3) | (0 << 0); /* nLED1 */
 	LPC_IOCON->PIO0_7 = (1 << 3) | (0 << 0); /* nLED2 */
 	LPC_GPIO->CLR[0] = 1 << 2;
-	LPC_GPIO->SET[0] = 1 << 7;
+	LPC_GPIO->SET[0] = 1 << 7; /* LED2 default off */
 	LPC_GPIO->DIR[0] |= (1 << 2) | (1 << 7);
 
 	/* board ID, between 0 and 26 */
@@ -394,7 +384,8 @@ void lava_lmp_pin_init(void)
 
 	switch (mode) {
 	case BOARDID_SDMUX:
-		lava_lmp_rx = lava_lmp_sdmux;
+		json_info = json_info_sdmux;
+		lmp_json_callback_board = lmp_json_callback_board_sdmux;
 		/* mux control and power: inert mode = 00000101 */
 		LPC_GPIO->CLR[0] = 0xfa << 8;
 		LPC_GPIO->SET[0] = 5 << 8;
@@ -406,7 +397,8 @@ void lava_lmp_pin_init(void)
 		analog = 1;
 		break;
 	case BOARDID_USB:
-		lava_lmp_rx = lava_lmp_usb;
+		json_info = json_info_usb;
+		lmp_json_callback_board = lmp_json_callback_board_usb;
 		/* mux control inert mode = 10 */
 		LPC_GPIO->CLR[0] = 1 << 8;
 		LPC_GPIO->SET[0] = 2 << 8;
@@ -415,7 +407,8 @@ void lava_lmp_pin_init(void)
 		analog = 1;
 		break;
 	case BOARDID_HDMI:
-		lava_lmp_rx = lava_lmp_hdmi;
+		json_info = json_info_hdmi;
+		lmp_json_callback_board = lmp_json_callback_board_hdmi;
 
 		LPC_SYSCON->SYSAHBCLKCTRL |= (1<<19) | (1<<23) | (1<<24);
 		
@@ -462,17 +455,21 @@ void lava_lmp_pin_init(void)
 		analog = 1;
 		break;
 	case BOARDID_LSGPIO:
-		lava_lmp_rx = lava_lmp_lsgpio;
+		json_info = json_info_lsgpio;
+		lmp_json_callback_board = lmp_json_callback_board_lsgpio;
 		lava_lmp_ls_bus_mode(0, LS_DIR_IN);
 		lava_lmp_ls_bus_mode(1, LS_DIR_IN);
 		/* LS Controls are output */
 		LPC_GPIO->DIR[1] |= 0xf << 26;
 		break;
 	case BOARDID_ETH:
-		lava_lmp_rx = lava_lmp_eth;
+		json_info = json_info_eth;
+		lmp_json_callback_board = lmp_json_callback_board_eth;
+
 		break;
 	case BOARDID_SATA:
-		lava_lmp_rx = lava_lmp_sata;
+		json_info = json_info_sata;
+		lmp_json_callback_board = lmp_json_callback_board_sata;
 		break;
 	}
 

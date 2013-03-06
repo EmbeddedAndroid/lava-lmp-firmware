@@ -12,9 +12,9 @@
 #include "lava-lmp.h"
 
 
-static const char *json =
-		"\","
-		"\"type\":\"lmp-hdmi\","
+const char * const json_info_hdmi =
+		","
+		"\"type\":\"hdmi\","
 		"\"if\":["
 			"{"
 				"\"name\":\"HDMI\","
@@ -34,19 +34,49 @@ static const char *json =
 		"],"
 		"\"int\":["
 			"{"
-				"\"name\":\"fake-edid\""
+				"\"name\":\"fake-edid\","
+				"\"setting\":\"eeprom\""
 			"}"
 		"],"
 		"\"mux\":["
 			"{"
 				"\"sink\":\"MON.5V\","
-				"\"src\":[\"NULL\",\"DUT.5V\"]"
+				"\"src\":[null,\"DUT.5V\"]"
 			"},{"
 				"\"sink\":\"DUT.HPD\","
-				"\"src\":[\"NULL\",\"MON.HPD\"]"
+				"\"src\":[null,\"MON.HPD\"]"
 			"},{"
 				"\"sink\":\"DUT.EDID\","
 				"\"src\":[\"MON.EDID\",\"fake-edid\"]"
+			"}"
+		"],"
+		"\"modes\":["
+			"{"
+				"\"name\":\"hdmi\","
+				"\"options\":["
+					"{"
+						"\"name\":\"fake\","
+						"\"mux\":["
+							"{\"MON.5V\":\"DUT.5V\"},"
+							"{\"DUT.HPD\":\"MON.HPD\"},"
+							"{\"DUT.EDID\":\"fake-edid\"}"
+						"]"
+					"},{"
+						"\"name\":\"passthru\","
+						"\"mux\":["
+							"{\"MON.5V\":\"DUT.5V\"},"
+							"{\"DUT.HPD\":\"MON.HPD\"},"
+							"{\"DUT.EDID\":\"MON.EDID\"}"
+						"]"
+					"},{"
+						"\"name\":\"disconnect\","
+						"\"mux\":["
+							"{\"MON.5V\":null},"
+							"{\"DUT.HPD\":null},"
+							"{\"DUT.EDID\":\"MON.EDID\"}"
+						"]"
+					"}"
+				"]"
 			"}"
 		"]"
 	"}\x04"
@@ -90,16 +120,6 @@ struct reading_session {
 static volatile struct reading_session ring[4];
 static volatile unsigned char head;
 static unsigned char tail;
-
-void issue_json_state(void)
-{
-	lmp_issue_report_header("\"DUT.HPD\",\"val\":\"");
-	usb_queue_string("NULL");
-	usb_queue_string("\"},{\"name\":\"DUT.EDID\",\"val\":\"");
-	usb_queue_string("NULL");
-	usb_queue_string("\"}]}\x04");
-}
-
 
 /* on the wire, SCL just changed state */
 
@@ -189,104 +209,105 @@ bail:
 	LPC_GPIO_PIN_INT->IST = 1 << 0;
 }
 
-void lava_lmp_hdmi(int c)
+/*
+ * json:
+ * 	{
+ * 		"schema": "org.linaro.lmp.hdmi",
+ * 		"mode": "off" ( | "on" | "fake" }
+ * 	}
+ */
+
+char lmp_json_callback_board_hdmi(struct lejp_ctx *ctx, char reason)
 {
 	char str[10];
 	unsigned char n, m;
 	unsigned char cs;
 	static int q;
 
-	if (c < 0) { /* idle */
-
-		q++;
-		if (idle_ok && (q & 0x7fff) == 0) {
-/*
-		if (q & 0x8000)
-				LPC_GPIO->SET[0] = 1 << 2;
-			else
-				LPC_GPIO->CLR[0] = 1 << 2;
-*/
-			lmp_issue_report_header("DUT.5V\",\"val\":\"");
-			lava_lmp_write_voltage();
-			usb_queue_string("\",\"unit\":\"mV\"}]}\x04");
-			return;
-		}
-
-		if (head == tail)
-			return;
-		if (ring[tail].bytes == 0x80) {
-			cs = 0;
-			m = ring[tail].ads;
-			for (n = 0; n < 0x80; n++)
-				cs += eeprom[m++];
-			lmp_issue_report_header("rxedid\",\"ads\":\"0x");
-			hex4(ring[tail].ads, str);
-			usb_queue_string(str);
-			if (!cs)
-				usb_queue_string("\",\"valid\":\"1\",\"val\":\"");
-			else
-				usb_queue_string("\",\"valid\":\"0\",\"val\":\"");
-			hexdump(eeprom + ring[tail].ads, 0x80);
-			tail = (tail + 1) & 3;
-			usb_queue_string("\"]}\x04");
-			return;
-		}
-		if (((tail + 1) & 3) == head)
-			return;
-
-/*
-		usb_queue_string("\x01""abandoned-EDID-rx.hex\x02");
-		hex4(ring[tail].ads, str);
-		usb_queue_string(str);
-		usb_queue_string(" ");
-		hex4(ring[tail].bytes, str);
-		usb_queue_string(str);
-		usb_queue_string("\x04");
-*/
-		tail = (tail + 1) & 3;
-
-		return;
+	if (reason == REASON_SEND_REPORT) {
+		lmp_issue_report_header("DUT.HPD\",\"val\":\"");
+		usb_queue_string("NULL");
+		usb_queue_string("\"},{\"name\":\"DUT.EDID\",\"val\":\"");
+		usb_queue_string("NULL");
+		usb_queue_string("\"}, {\"name\":\"DUT.5V\",\"val\":\"");
+		lava_lmp_write_voltage();
+		usb_queue_string("\",\"unit\":\"mV\"}]}\x04");
+		return 0;
 	}
 
-	switch (rx_state) {
-	case CMD:
-		switch (c) {
-#if 0
-		case 'S':
-			hexdump(dump, dump_pos);
+	if (ctx) {
+		switch (ctx->path_match) {
+		case LMPPT_schema:
+			if (strcmp(&ctx->buf[15], "hdmi"))
+				return -1; /* fail it */
 			break;
-#endif
-		case 'H':
-			rx_state = HPD;
+		case LMPPT_modes___name:
+			if (!strcmp(ctx->buf, "eth"))
+				return -1; /* fail it */
+			ctx->st[ctx->sp - 1].b |= 1;
 			break;
-		case 's':
-			issue_json_state();
-			break;
-		default:
-			lmp_default_cmd(c, json);
-			break;
-		}
-		break;
-	case HPD:  /* HPD connectivity mode */
-		switch (c) {
-		case 'X':
-			lava_lmp_actuate_relay(RL2_SET);
-			break;
-		case '0':
-			LPC_GPIO->SET[0] = 4 << 16;
-			lava_lmp_actuate_relay(RL2_CLR);
-			break;
-		case '1':
-			LPC_GPIO->CLR[0] = 4 << 16;
-			lava_lmp_actuate_relay(RL2_CLR);
-			break;
-		}
-		issue_json_state();
-		rx_state = CMD;
-		break;
-	default:
-		rx_state = CMD;
-		break;
-	}	
-}
 
+		case LMPPT_modes___option:
+			/* require that we had a correct modes[] name */
+			if (ctx->st[ctx->sp - 1].b != 1)
+				return -1;
+
+			if (!strcmp(ctx->buf, "off"))
+				lava_lmp_actuate_relay(RL2_SET);
+
+			if (!strcmp(ctx->buf, "on")) {
+				LPC_GPIO->SET[0] = 4 << 16;
+				lava_lmp_actuate_relay(RL2_CLR);
+				break;
+			}
+			if (!strcmp(ctx->buf, "fake")) {
+				LPC_GPIO->CLR[0] = 4 << 16;
+				lava_lmp_actuate_relay(RL2_CLR);
+			}
+			lmp_json_callback_board_hdmi(ctx, REASON_SEND_REPORT);
+			break;
+		}
+		return 0;
+	}
+
+	 /* idle processing */
+	q++;
+	if (!(q & 0x7fff))
+		return lmp_json_callback_board_hdmi(ctx, REASON_SEND_REPORT);
+
+	if (head == tail)
+		return 0;
+
+	if (ring[tail].bytes == 0x80) {
+		cs = 0;
+		m = ring[tail].ads;
+		for (n = 0; n < 0x80; n++)
+			cs += eeprom[m++];
+		lmp_issue_report_header("rxedid\",\"ads\":\"0x");
+		hex4(ring[tail].ads, str);
+		usb_queue_string(str);
+		if (!cs)
+			usb_queue_string("\",\"valid\":\"1\",\"val\":\"");
+		else
+			usb_queue_string("\",\"valid\":\"0\",\"val\":\"");
+		hexdump(eeprom + ring[tail].ads, 0x80);
+		tail = (tail + 1) & 3;
+		usb_queue_string("\"]}\x04");
+		return 0;
+	}
+	if (((tail + 1) & 3) == head)
+		return 0;
+
+/*
+	usb_queue_string("\x01""abandoned-EDID-rx.hex\x02");
+	hex4(ring[tail].ads, str);
+	usb_queue_string(str);
+	usb_queue_string(" ");
+	hex4(ring[tail].bytes, str);
+	usb_queue_string(str);
+	usb_queue_string("\x04");
+*/
+	tail = (tail + 1) & 3;
+
+	return 0;
+}

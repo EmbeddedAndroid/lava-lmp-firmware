@@ -41,7 +41,7 @@ extern uint8_t VCOM_ConfigDescriptor[];
 
 static USBD_API_T *usbapi;
 
-extern void lava_lmp_serial_write(int c);
+extern void lmp_parse(const unsigned char *buf, int len);
 
 #define _(c) c, 0
 
@@ -96,13 +96,15 @@ struct vcom_data {
 	unsigned char txBuf[USB_HS_MAX_BULK_PACKET];
 	volatile uint8_t rxlen;
 	volatile uint8_t txlen;
-	volatile uint8_t pend;
+	volatile uint8_t pend_tx;
+	volatile uint8_t pend_rx;
 	uint8_t _stuff;
 };
 
 struct vcom_data _vcom;
 struct vcom_data * const vcom = &_vcom;
 char ascii_serial[USB_SERIAL_NUMBER_CHARS + 1];
+char flash_led;
 
 static USBD_API_INIT_PARAM_T usb_param = {
 	.usb_reg_base = LPC_USB_BASE,
@@ -124,11 +126,6 @@ static USBD_CDC_INIT_PARAM_T cdc_param = {
 	.cif_intf_desc = &VCOM_ConfigDescriptor[USB_CONFIGUARTION_DESC_SIZE],
 	.dif_intf_desc = &VCOM_ConfigDescriptor[USB_CONFIGUARTION_DESC_SIZE +
 		USB_INTERFACE_DESC_SIZE + 0x0013 + USB_ENDPOINT_DESC_SIZE],
-};
-
-enum {
-	PEND_TX = 1,
-	PEND_RX = 2,
 };
 
 static void USB_pin_clk_init(void)
@@ -157,10 +154,10 @@ void usb_queue_tx(const unsigned char *buf, int len)
 	vcom->txlen = len;
 
 	/* not expecting any "in" IRQ to send anything, do it ourselves */
-	if (!(vcom->pend & PEND_TX)) {
+	if (!vcom->pend_tx) {
 		vcom->txlen -= usbapi->hw->WriteEP(vcom->hUsb,
 					  USB_CDC_EP_BULK_IN, vcom->txBuf, len);
-		vcom->pend |= PEND_TX;
+		vcom->pend_tx = 1;
 	}
 
 	/* a pending "in" IRQ should happen soon and send buffered stuff */
@@ -192,11 +189,11 @@ static ErrorCode_t VCOM_in(USBD_HANDLE_T hUsb, void *data, uint32_t event)
 		return LPC_OK;
 
 	if (!vcom->txlen) {
-		vcom->pend &= ~PEND_TX;
+		vcom->pend_tx = 0;
 		return LPC_OK;
 	}
 
-	vcom->pend |= PEND_TX;
+	vcom->pend_tx = 1;
 	vcom->txlen -= usbapi->hw->WriteEP(hUsb, USB_CDC_EP_BULK_IN,
 						     vcom->txBuf, vcom->txlen);
 	return LPC_OK;
@@ -211,9 +208,9 @@ static ErrorCode_t VCOM_out(USBD_HANDLE_T hUsb, void *data, uint32_t event)
 	if (event != USB_EVT_OUT)
 		return LPC_OK;
 
-	if (vcom->rxlen || (vcom->pend & PEND_RX)) {
+	if (vcom->rxlen || vcom->pend_rx) {
 		/* can't cope with it right now, foreground will get it later */
-		vcom->pend |= PEND_RX;
+		vcom->pend_rx = 1;
 
 		return LPC_OK;
 	}
@@ -230,11 +227,9 @@ void USB_IRQHandler(void)
 
 int main(void)
 {
-	int pos = 0;
-	unsigned char c;
-	unsigned char initial = 1;
 	unsigned char *p = &_vcom.string_descriptor[sizeof VCOM_StringDescriptor];
 	int n;
+	static unsigned short q;
 
 	SystemInit();
 	SystemCoreClockUpdate();
@@ -247,7 +242,7 @@ int main(void)
 	lava_lmp_eeprom(EEPROM_RESERVED_OFFSET, EEPROM_READ, p,
 			USB_SERIAL_NUMBER_CHARS * 2);
 
-	if (*p == 0xff)
+	if (*p == 0xff || *p == 0x00)
 		memcpy(p, VCOM_UnsetSerial, sizeof(VCOM_UnsetSerial));
 
 	for (n = 0; n < USB_SERIAL_NUMBER_CHARS; n++)
@@ -267,37 +262,29 @@ int main(void)
 	NVIC_EnableIRQ(USB_IRQn); /* enable USB0 IRQ */
 	usbapi->hw->Connect(vcom->hUsb, 1); /* USB Connect */
 
-	/* foreground code feeds board-specific state machine
-	 * if first incoming char is '#', enter EEPROM programming state machine
-	 */
+	/* foreground code feeds board-specific JSON parser */
 
 	while (1) {
 
+		if (flash_led && !(q++ & 0x7fff)) {
+			if (q & 0x8000)
+				LPC_GPIO->SET[0] = 1 << 2;
+			else
+				LPC_GPIO->CLR[0] = 1 << 2;
+		}
+
+		if (idle_ok)
+			lmp_json_callback_board(NULL, -1);
+
 		if (!vcom->rxlen) {
-
-			/* idle */
-			lava_lmp_rx(-1);
-
-			if (!(vcom->pend & PEND_RX))
+			if (!vcom->pend_rx)
 				continue;
 			vcom->rxlen = usbapi->hw->ReadEP(
 				vcom->hUsb, USB_CDC_EP_BULK_OUT, vcom->rxBuf);
-			pos = 0;
-			vcom->pend &= ~PEND_RX;
-			continue;
+			vcom->pend_rx = 0;
 		}
-		c = vcom->rxBuf[pos++];
-		if (pos >= vcom->rxlen) {
-			vcom->rxlen = 0;
-			pos = 0;
-		}
-
-		if (initial && c == '#')
-			lava_lmp_rx = lava_lmp_serial_write;
-
-		initial = 0;
-
-		lava_lmp_rx(c);
+		lmp_parse(vcom->rxBuf, vcom->rxlen);
+		vcom->rxlen = 0;
 	}
 
 spin:

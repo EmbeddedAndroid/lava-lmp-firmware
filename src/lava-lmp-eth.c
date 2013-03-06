@@ -11,9 +11,9 @@
 #include <power_api.h>
 #include "lava-lmp.h"
 
-static const char *json =
-		"\","
-		"\"type\":\"lmp-eth\","
+const char *json_info_eth =
+		","
+		"\"type\":\"eth\","
 		"\"if\":["
 			"{"
 				"\"name\":\"RJ45\""
@@ -33,49 +33,76 @@ static const char *json =
 		"\"mux\":["
 			"{"
 				"\"sink\":\"DUT\","
-				"\"src\":[\"NULL\",\"ext\"]"
+				"\"src\":[null,\"ext\"]"
+			"}"
+		"],"
+		"\"modes\":["
+			"{"
+				"\"name\":\"eth\","
+				"\"options\":["
+					"{"
+						"\"name\":\"passthru\","
+						"\"mux\":[{\"DUT\":\"ext\"}]"
+					"},{"
+						"\"name\":\"disconnect\","
+						"\"mux\":[{\"DUT\":null}]"
+					"}"
+				"]"
 			"}"
 		"]"
 	"}\x04"
 ;
 
-enum rx_states {
-	CMD,
-	J_BOOL
-};
+/*
+ * json:
+ * 	{
+ * 		"schema": "org.linaro.lmp.eth",
+ * 		"mode: true | false
+ * 	}
+ */
 
-
-void lava_lmp_eth(int c)
+char lmp_json_callback_board_eth(struct lejp_ctx *ctx, char reason)
 {
-	if (c < 0)
-		return;
+	if (!ctx)
+		return 0;
 
-	switch (rx_state) {
-	case CMD:
-		switch (c) {
-		case 'J':
-			rx_state = J_BOOL;
-			break;
-		default:
-			lmp_default_cmd(c, json);
-			break;
-		}
+	if (reason == REASON_SEND_REPORT) {
+		lmp_issue_report_header("modes\",\"modes\":[{\"name\":\"eth\",\"mode\":\"");
+		if (LPC_GPIO->PIN[0] & 1 << 7)
+			usb_queue_string("disconnect");
+		else
+			usb_queue_string("passthru");
+		usb_queue_string("\"}]}]}\x04");
+		return 0;
+	}
+
+	switch (ctx->path_match) {
+	case LMPPT_schema:
+		if (strcmp(&ctx->buf[15], "eth"))
+			return -1; /* fail it */
+		break;
+	case LMPPT_modes___name:
+		if (!strcmp(ctx->buf, "eth"))
+			return -1; /* fail it */
+		ctx->st[ctx->sp - 1].b |= 1;
 		break;
 
-	case J_BOOL:
-		if (c & 1) {
+	case LMPPT_modes___option:
+		/* require that we had a correct modes[] name */
+		if (ctx->st[ctx->sp - 1].b != 1)
+			return -1;
+		if (!strcmp(ctx->buf, "passthru")) {
 			lava_lmp_actuate_relay(RL1_CLR);
 			lava_lmp_actuate_relay(RL2_CLR);
-		} else {
+			LPC_GPIO->CLR[0] = 1 << 7;
+		}
+		if (!strcmp(ctx->buf, "disconnect")) {
 			lava_lmp_actuate_relay(RL1_SET);
 			lava_lmp_actuate_relay(RL2_SET);
+			LPC_GPIO->SET[0] = 1 << 7;
 		}
-		rx_state = CMD;
-		break;
-
-	default:
-		rx_state = CMD;
+		lmp_json_callback_board_eth(ctx, REASON_SEND_REPORT);
 		break;
 	}
+	return 0;
 }
-

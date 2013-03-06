@@ -11,9 +11,9 @@
 #include <power_api.h>
 #include "lava-lmp.h"
 
-static const char *json =
-		"\","
-		"\"type\":\"lmp-usb\","
+const char * const json_info_usb =
+		","
+		"\"type\":\"usb\","
 		"\"if\":["
 			"{"
 				"\"name\":\"USB-minib\","
@@ -42,66 +42,90 @@ static const char *json =
 				"\"sink\":\"DUT\","
 				"\"src\":[\"NULL\",\"dev\",\"host\"]"
 			"}"
+		"],"
+		"\"modes\":["
+			"{"
+				"\"name\":\"usb\","
+				"\"options\":["
+					"{"
+						"\"name\":\"device\","
+						"\"mux\":[{\"DUT\":\"dev\"}]"
+					"},{"
+						"\"name\":\"host\","
+						"\"mux\":[{\"DUT\":\"host\"}]"
+					"},{"
+						"\"name\":\"disconnect\","
+						"\"mux\":[{\"DUT\":null}]"
+					"}"
+				"]"
+			"}"
 		"]"
 	"}\x04"
 ;
 
-enum rx_states {
-	CMD,
-	MODE,
-};
+/*
+ * json:
+ * 	{
+ * 		"schema": "org.linaro.lmp.hdmi",
+ * 		"mode: "off" ( | "on" | "fake" }
+ * 	}
+ */
 
-void lava_lmp_usb(int c)
+char lmp_json_callback_board_usb(struct lejp_ctx *ctx, char reason)
 {
 	static int q;
 
-	if (c < 0) {
-		q++;
-		if (idle_ok && (q & 0x7fff) == 0) {
-			lmp_issue_report_header("DUT.5V\",\"val\":\"");
-			lava_lmp_write_voltage();
-			usb_queue_string("\",\"unit\":\"mV\"}]}\x04");
-		}
-		return;
+	if (reason == REASON_SEND_REPORT) {
+		lmp_issue_report_header("DUT.5V\",\"val\":\"");
+		lava_lmp_write_voltage();
+		usb_queue_string("\",\"unit\":\"mV\"}]}\x04");
+		return 0;
 	}
 
-	switch (rx_state) {
-	case CMD:
-		switch (c) {
-		case 'M':
-			rx_state = MODE;
+	if (ctx) {
+		switch (ctx->path_match) {
+		case 1: /* schema */
+			if (strcmp(&ctx->buf[15], "usb"))
+				return -1; /* fail it */
 			break;
-		default:
-			lmp_default_cmd(c, json);
-			break;
-		}
-		break;
-	case MODE:  /* USB connectivity mode */
-		switch (c) {
-		case 'H':
-			LPC_GPIO->SET[0] = 1 << 8; /* forced DUT ID low */
-			LPC_GPIO->CLR[0] = 2 << 8; /* disable power to device */
-			lava_lmp_actuate_relay(RL1_SET);
-			lava_lmp_actuate_relay(RL2_SET);
-			break;
-		case 'D':
-			lava_lmp_actuate_relay(RL1_CLR);
-			lava_lmp_actuate_relay(RL2_CLR);
-			LPC_GPIO->CLR[0] = 1 << 8;
-			LPC_GPIO->SET[0] = 2 << 8; /* enable power to device */
-			break;
-		case 'X':
-			LPC_GPIO->CLR[0] = 1 << 8;
-			LPC_GPIO->CLR[0] = 2 << 8; /* disable power to device */
-			lava_lmp_actuate_relay(RL1_CLR);
-			lava_lmp_actuate_relay(RL2_CLR);
-			break;
-		}
-		rx_state = CMD;
-		break;
-	default:
-		rx_state = CMD;
-		break;
-	}	
-}
+		case 4: /* mode */
+			if (!(reason & LEJP_FLAG_CB_IS_VALUE))
+				break;
 
+			if (!strcmp(ctx->buf, "off")) {
+				LPC_GPIO->CLR[0] = 1 << 8;
+				/* disable power to device */
+				LPC_GPIO->CLR[0] = 2 << 8;
+				lava_lmp_actuate_relay(RL1_CLR);
+				lava_lmp_actuate_relay(RL2_CLR);
+			}
+			if (!strcmp(ctx->buf, "host")) {
+				/* forced DUT ID low */
+				LPC_GPIO->SET[0] = 1 << 8;
+				/* disable power to device */
+				LPC_GPIO->CLR[0] = 2 << 8;
+				lava_lmp_actuate_relay(RL1_SET);
+				lava_lmp_actuate_relay(RL2_SET);
+				break;
+			}
+			if (!strcmp(ctx->buf, "device")) {
+				lava_lmp_actuate_relay(RL1_CLR);
+				lava_lmp_actuate_relay(RL2_CLR);
+				LPC_GPIO->CLR[0] = 1 << 8;
+				/* enable power to device */
+				LPC_GPIO->SET[0] = 2 << 8;
+			}
+			lmp_json_callback_board_usb(ctx, REASON_SEND_REPORT);
+			break;
+		}
+		return 0;
+	}
+
+	 /* idle processing */
+
+	q++;
+	if (idle_ok && (q & 0x7fff) == 0)
+		lmp_json_callback_board_usb(ctx, REASON_SEND_REPORT);
+
+	return 0;
+}

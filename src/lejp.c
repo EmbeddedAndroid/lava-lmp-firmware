@@ -1,8 +1,6 @@
 /*
  * Lightweight Embedded JSON Parser
  *
- * Initial POC version
- *
  * Copyright (C) 2013 Andy Green <andy@warmcat.com>
  * This code is licensed under LGPL 2.1
  * http://www.gnu.org/licenses/lgpl-2.1.html
@@ -11,18 +9,47 @@
 #include <string.h>
 #include "lejp.h"
 
+/**
+ * lejp_construct - prepare a struct lejp_ctx for use
+ *
+ * @ctx:	pointer to your struct lejp_ctx
+ * @callback:	your user callback which will received parsed tokens
+ * @user:	optional user data pointer untouched by lejp
+ * @paths:	your array of name elements you are interested in
+ * @count_paths:	ARRAY_SIZE() of @paths
+ *
+ * Prepares your context struct for use with lejp
+ */
+
 void
 lejp_construct(struct lejp_ctx *ctx,
 	char (*callback)(struct lejp_ctx *ctx, char reason), void *user,
 			const char * const *paths, unsigned char count_paths)
 {
-	memset(ctx, 0, sizeof(*ctx));
+	ctx->st[0].s = 0;
+	ctx->st[0].p = 0;
+	ctx->st[0].i = 0;
+	ctx->st[0].b = 0;
+	ctx->sp = 0;
+	ctx->ipos = 0;
+	ctx->ppos = 0;
+	ctx->path_match = 0;
 	ctx->callback = callback;
 	ctx->user = user;
 	ctx->paths = paths;
 	ctx->count_paths = count_paths;
 	ctx->callback(ctx, LEJPCB_CONSTRUCTED);
 }
+
+/**
+ * lejp_destruct - retire a previously constructed struct lejp_ctx
+ *
+ * @ctx:	pointer to your struct lejp_ctx
+ *
+ * lejp does not perform any allocations, but since your user code might, this
+ * provides a one-time LEJPCB_DESTRUCTED callback at destruction time where
+ * you can clean up in your callback.
+ */
 
 void
 lejp_destruct(struct lejp_ctx *ctx)
@@ -31,8 +58,56 @@ lejp_destruct(struct lejp_ctx *ctx)
 	ctx->callback(ctx, LEJPCB_DESTRUCTED);
 }
 
+/**
+ * lejp_change_callback - switch to a different callback from now on
+ *
+ * @ctx:	pointer to your struct lejp_ctx
+ * @callback:	your user callback which will received parsed tokens
+ *
+ * This tells the old callback it was destroyed, in case you want to take any
+ * action because that callback "lost focus", then changes to the new
+ * callback and tells it first that it was constructed, and then started.
+ *
+ * Changing callback is a cheap and powerful trick to split out handlers
+ * according to information earlier in the parse.  For example you may have
+ * a JSON pair "schema" whose value defines what can be expected for the rest
+ * of the JSON.  Rather than having one huge callback for all cases, you can
+ * have an initial one looking for "schema" which then calls
+ * lejp_change_callback() to a handler specific for the schema.
+ *
+ * Notice that afterwards, you need to construct the context again anyway to
+ * parse another JSON object, and the callback is reset then to the main,
+ * schema-interpreting one.  The construction action is very lightweight.
+ */
+
+void
+lejp_change_callback(struct lejp_ctx *ctx,
+		       char (*callback)(struct lejp_ctx *ctx, char reason))
+{
+	ctx->callback(ctx, LEJPCB_DESTRUCTED);
+	ctx->callback = callback;
+	ctx->callback(ctx, LEJPCB_CONSTRUCTED);
+	ctx->callback(ctx, LEJPCB_START);
+}
+
+/**
+ * lejp_parse - interpret some more incoming data incrementally
+ *
+ * @ctx:	previously constructed parsing context
+ * @json:	char buffer with the new data to interpret
+ * @len:	amount of data in the buffer
+ *
+ * Because lejp is a stream parser, it incrementally parses as new data
+ * becomes available, maintaining all state in the context struct.  So an
+ * incomplete JSON is a normal situation, getting you a LEJP_CONTINUE
+ * return, signalling there's no error but to call again with more data when
+ * it comes to complete the parsing.  Successful parsing completes with a
+ * 0 or positive integer indicating how much of the last input buffer was
+ * unused.
+ */
+
 int
-lejp_parse(struct lejp_ctx *ctx, const char *json, int len)
+lejp_parse(struct lejp_ctx *ctx, const unsigned char *json, int len)
 {
 	unsigned char c, n, s, ret = LEJP_REJECT_UNKNOWN;
 	static const char esc_char[] = "\"\\/bfnrt";
@@ -86,7 +161,11 @@ lejp_parse(struct lejp_ctx *ctx, const char *json, int len)
 				}
 				if (ctx->st[ctx->sp - 1].s != LEJP_MP_DELIM) {
 					ctx->buf[ctx->npos] = '\0';
-					ctx->callback(ctx, LEJPCB_VAL_STR_END);
+					if (ctx->callback(ctx,
+						      LEJPCB_VAL_STR_END) < 0) {
+						ret = LEJP_REJECT_CALLBACK;
+						goto reject;
+					}
 				}
 				/* pop */
 				ctx->sp--;
@@ -140,15 +219,14 @@ lejp_parse(struct lejp_ctx *ctx, const char *json, int len)
 			ctx->st[ctx->sp].s++;
 			switch (s) {
 			case LEJP_MP_STRING_ESC_U2:
-				if (ctx->uni >= 0x08) {
-					/*
-					 * 0x08-0xff (0x0800 - 0xffff)
-					 * emit 3-byte UTF-8
-					 */
-					c = 0xe0 | ((ctx->uni >> 4) & 0xf);
-					goto emit_string_char;
-				}
-				break;
+				if (ctx->uni < 0x08)
+					break;
+				/*
+				 * 0x08-0xff (0x0800 - 0xffff)
+				 * emit 3-byte UTF-8
+				 */
+				c = 0xe0 | ((ctx->uni >> 4) & 0xf);
+				goto emit_string_char;
 
 			case LEJP_MP_STRING_ESC_U3:
 				if (ctx->uni >= 0x080) {
@@ -160,21 +238,20 @@ lejp_parse(struct lejp_ctx *ctx, const char *json, int len)
 					c = 0x80 | ((ctx->uni >> 2) & 0x3f);
 					goto emit_string_char;
 				}
-				if (ctx->uni >= 0x008) {
-					/*
-					 * 0x008 - 0x7f (0x0080 - 0x07ff)
-					 * start 2-byte seq
-					 */
-					c = 0xc0 | (ctx->uni >> 2);
-					goto emit_string_char;
-				}
-				break;
+				if (ctx->uni < 0x008)
+					break;
+				/*
+				 * 0x008 - 0x7f (0x0080 - 0x07ff)
+				 * start 2-byte seq
+				 */
+				c = 0xc0 | (ctx->uni >> 2);
+				goto emit_string_char;
 
 			case LEJP_MP_STRING_ESC_U4:
-				if (ctx->uni >= 0x0080) {
+				if (ctx->uni >= 0x0080)
 					/* end of 2 or 3-byte seq */
 					c = 0x80 | (ctx->uni & 0x3f);
-				} else
+				else
 					/* literal */
 					c = ctx->uni;
 
@@ -194,11 +271,13 @@ lejp_parse(struct lejp_ctx *ctx, const char *json, int len)
 			ctx->path[ctx->ppos] = '\0';
 
 			/* we only need to check if a match is not active */
-			for (n = 0; !ctx->hit && n < ctx->count_paths; n++)
-				if (!strcmp(ctx->path, ctx->paths[n])) {
-					ctx->hit = n + 1;
-					ctx->hit_path_len = ctx->ppos;
-				}
+			for (n = 0; !ctx->path_match &&
+						    n < ctx->count_paths; n++) {
+				if (strcmp(ctx->path, ctx->paths[n]))
+					continue;
+				ctx->path_match = n + 1;
+				ctx->path_match_len = ctx->ppos;
+			}
 			ctx->callback(ctx, LEJPCB_PAIR_NAME);
 			break;
 
@@ -216,6 +295,7 @@ lejp_parse(struct lejp_ctx *ctx, const char *json, int len)
 				ctx->st[ctx->sp].s = LEJP_MP_COMMA_OR_END;
 				c = LEJP_MP_STRING;
 				ctx->npos = 0;
+				ctx->buf[0] = '\0';
 				ctx->callback(ctx, LEJPCB_VAL_STR_START);
 				goto add_stack_level;
 
@@ -358,12 +438,21 @@ lejp_parse(struct lejp_ctx *ctx, const char *json, int len)
 				ctx->st[ctx->sp].s = LEJP_M_P;
 				if (!ctx->sp) {
 					ctx->ppos = 0;
-					ctx->hit = 0; /* has to be so */
+					/*
+					 * since we came back to root level,
+					 * no path can still match
+					 */
+					ctx->path_match = 0;
 					break;
 				}
 				ctx->ppos = ctx->st[ctx->sp - 1].p;
-				if (ctx->hit && ctx->ppos <= ctx->hit_path_len)
-					ctx->hit = 0;
+				if (ctx->path_match &&
+					       ctx->ppos <= ctx->path_match_len)
+					/*
+					 * we shrank the path to be
+					 * smaller than the matching point
+					 */
+					ctx->path_match = 0;
 
 				if (ctx->st[ctx->sp - 1].s != LEJP_MP_ARRAY_END)
 					break;
@@ -387,8 +476,13 @@ lejp_parse(struct lejp_ctx *ctx, const char *json, int len)
 				/* drop the path [n] bit */
 				ctx->ppos = ctx->st[ctx->sp - 1].p;
 				ctx->ipos = ctx->st[ctx->sp - 1].i;
-				if (ctx->hit && ctx->ppos <= ctx->hit_path_len)
-					ctx->hit = 0;
+				if (ctx->path_match &&
+					       ctx->ppos <= ctx->path_match_len)
+					/*
+					 * we shrank the path to be
+					 * smaller than the matching point
+					 */
+					ctx->path_match = 0;
 
 				/* do LEJP_MP_ARRAY_END processing */
 				goto redo_character;
@@ -404,8 +498,13 @@ lejp_parse(struct lejp_ctx *ctx, const char *json, int len)
 				ctx->sp--;
 				ctx->ppos = ctx->st[ctx->sp - 1].p;
 				ctx->ipos = ctx->st[ctx->sp - 1].i;
-				if (ctx->hit && ctx->ppos <= ctx->hit_path_len)
-					ctx->hit = 0;
+				if (ctx->path_match &&
+					       ctx->ppos <= ctx->path_match_len)
+					/*
+					 * we shrank the path to be
+					 * smaller than the matching point
+					 */
+					ctx->path_match = 0;
 				break;
 			}
 
@@ -451,19 +550,20 @@ emit_string_char:
 		continue;
 
 add_stack_level:
-		/* add a level on the object stack */
+		/* push on to the object stack */
+		if (ctx->ppos && ctx->st[ctx->sp].s != LEJP_MP_COMMA_OR_END &&
+				ctx->st[ctx->sp].s != LEJP_MP_ARRAY_END)
+			ctx->path[ctx->ppos++] = '.';
+
 		ctx->st[ctx->sp].p = ctx->ppos;
 		ctx->st[ctx->sp].i = ctx->ipos;
-		ctx->sp++;
-		if (ctx->sp == ARRAY_SIZE(ctx->st)) {
+		if (++ctx->sp == ARRAY_SIZE(ctx->st)) {
 			ret = LEJP_REJECT_STACK_OVERFLOW;
 			goto reject;
 		}
-		if (ctx->ppos && ctx->path[ctx->ppos - 1] != '.') {
-			ctx->path[ctx->ppos++] = '.';
-			ctx->path[ctx->ppos] = '\0';
-		}
+		ctx->path[ctx->ppos] = '\0';
 		ctx->st[ctx->sp].s = c;
+		ctx->st[ctx->sp].b = 0;
 		continue;
 
 append_npos:
