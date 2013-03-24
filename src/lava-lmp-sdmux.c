@@ -56,28 +56,28 @@ const char * const json_info_sdmux =
 				"\"name\":\"dut\","
 				"\"options\":["
 					"{"
+						"\"name\":\"disconnect\","
+						"\"mux\":[{\"DUT\":null}]"
+					"},{"
 						"\"name\":\"uSDA\","
 						"\"mux\":[{\"DUT\":\"uSDA\"}]"
 					"},{"
 						"\"name\":\"uSDB\","
 						"\"mux\":[{\"DUT\":\"uSDB\"}]"
-					"},{"
-						"\"name\":\"disconnect\","
-						"\"mux\":[{\"DUT\":null}]"
 					"}"
 				"]"
 			"},{"
 				"\"name\":\"host\","
 				"\"options\":["
 					"{"
+						"\"name\":\"disconnect\"	,"
+						"\"mux\":[{\"DUT\":null}]"
+					"},{"
 						"\"name\":\"uSDA\","
 						"\"mux\":[{\"DUT\":\"uSDA\"}]"
 					"},{"
 						"\"name\":\"uSDB\","
 						"\"mux\":[{\"DUT\":\"uSDB\"}]"
-					"},{"
-						"\"name\":\"disconnect\","
-						"\"mux\":[{\"DUT\":null}]"
 					"}"
 				"]"
 			"}"
@@ -88,26 +88,50 @@ const char * const json_info_sdmux =
 
 /* how to set BUS A for the various modes
  * (4 * host) + dut
+ *
+ * A_D0 = DUT MUX nEnable
+ * A_D1 = DUT SEL SDA / SDB
+ * A_D2 = HOST MUX nEnable
+ * A_D3 = HOST SEL SDA / SDB
+ * A_D4 = 1 = SDA_VDD <- DUT_VDD
+ * A_D5 = 1 = SDA_VDD <- HOST_VDD
+ * A_D6 = 1 = SDB_VDD <- DUT_VDD
+ * A_D7 = 1 = SDB_VDD <- HOST_VDD
+ *
+ *          Power  Mux
+ * DUT  HOST
+ * x    x     0_   _5
+ * SDA  x     1_   _4
+ * SDB  x     4_   _6
+ * x    SDA   2_   _1
+ * x    SDB   8_   _9
+ * SDA  SDB   9_   _8
+ * SDB  SDA   6_   _2
+ *
+ * 3 * HOST + DUT lookup
  */
 
 static const unsigned char busa_modes[] = {
-	0x05, /* 0: all NC */
-	0x24, /* 2: SDA to DUT */
-	0x46, /* 4: SDB to DUT */
-	0x05, /* illegal */
+	0x05, /* DUT: disconect, HOST: disconnect */
+	0x14, /* DUT: SDA, HOST: disconnect */
+	0x46, /* DUT: SDB, HOST: disconnect */
 
-	0x21, /* 1: SDA to HOST, NC to DUT */
-	0x05, /* illegal, SDA to both */
-	0x52, /* 5: SDA to HOST, SDB to DUT */
-	0x05, /* illegal */
+	0x21, /* DUT: disconnect, HOST: SDA */
+	0x21, /* DUT: SDA, HOST:SDA -- illegal host wins */
+	0x62, /* DUT: SDB, HOST: SDB */
 
-	0x89, /* 3: SDB to HOST */
-	0xa8, /* 6: SDB to HOST, SDA to DUT */
-	0x05, /* illegal, SDB to both */
-	0x05, /* illegal */
+	0x89, /* DUT: disconnect, HOST: SDB */
+	0x98, /* DUT: SDA, HOST: SDB */
+	0x89, /* DUT: SDB , HOST: SDB -- illegal host wins */
 };
 
-static unsigned char muxmode = 0;
+static unsigned char muxmode = 3;
+static const char const * sides[] = {
+	"disconnect",
+	"uSDA",
+	"uSDB"
+};
+
 /*
  * json:
  * 	{
@@ -119,73 +143,123 @@ static unsigned char muxmode = 0;
 
 char lmp_json_callback_board_sdmux(struct lejp_ctx *ctx, char reason)
 {
-	unsigned char n;
 	static int q;
+	static char mul;
+	static char masked;
+	static char update;
+	static unsigned char old_muxmode;
+	char str[10];
 
-	if (reason == REASON_SEND_REPORT) {
-		lmp_issue_report_header("DUT.pwr\",\"val\":\"");
-		lava_lmp_write_voltage();
-		usb_queue_string("\",\"unit\":\"mV\"}]}\x04");
-		return 0;
+	if (!ctx) {
+		/* idle processing */
+		q++;
+		reason = REASON_SEND_REPORT;
+		if (idle_ok && (q & 0x7fff))
+			return 0;
 	}
 
-	if (ctx) {
+	switch (reason) {
+	case LEJPCB_START:
+		mul = -1;
+		update = 0;
+		old_muxmode = muxmode;
+		break;
+
+	case LEJPCB_VAL_STR_END:
 		switch (ctx->path_match) {
 		case 1: /* schema */
 			if (strcmp(&ctx->buf[15], "sdmux"))
 				return -1; /* fail it */
 			break;
-		case 4: /* mode */
-			if (!(reason & LEJP_FLAG_CB_IS_VALUE))
-				break;
+		default:
+			if (!strcmp(ctx->path, "modes[].name")) {
 
-			n = 2;
-			if (!strcmp(&ctx->path[ctx->path_match_len], "DUT")) {
-				n = 0;
-				muxmode &= 3 << 2;
+				if (!strcmp(ctx->buf, "dut")) {
+					mul = 1;
+					masked = muxmode - (muxmode % 3);
+				} else
+					if (!strcmp(ctx->buf, "host")) {
+						mul = 3;
+						masked = muxmode % 3;
+					} else
+						/* illegal name */
+						return -1;
 			}
-			if (!strcmp(&ctx->path[ctx->path_match_len], "HOST")) {
-				n = 1;
-				muxmode &= 3;
+			if (!strcmp(ctx->path, "modes[].option")) {
+				/* require a previous name */
+				if (mul == -1)
+					return -1;
+
+				update = 1;
+
+				if (!strcmp(ctx->buf, "disconnect")) {
+					muxmode = masked;
+					update = 1;
+					break;
+				}
+				if (!strcmp(ctx->buf, "uSDA")) {
+					muxmode = masked + mul;
+					update = 1;
+					break;
+				}
+				if (!strcmp(ctx->buf, "uSDB")) {
+					muxmode = masked + (2 * mul);
+					update = 1;
+					break;
+				}
+				/* illegal option */
+				return -1;
 			}
-			if (n == 2)
-				return -1; /* fail it */
-
-			if (reason == LEJPCB_VAL_NULL)
-				goto okay;
-
-			if (!strcmp(ctx->buf, "uSDA")) {
-				muxmode |= 1 << (2 * n);
-				goto okay;
-			}
-			if (!strcmp(ctx->buf, "uSDB")) {
-				muxmode |= 2 << (2 * n);
-				goto okay;
-			}
-			return -1;
-okay:
-			/* power the host or not */
-			if (mode >> 2)
-				LPC_GPIO->SET[0] = 1 << 17;
-			else
-				LPC_GPIO->CLR[0] = 1 << 17;
-			lava_lmp_actuate_relay(RL1_CLR);
-			{ volatile int n = 0; while (n < 1000000) n++; }
-			lava_lmp_bus_write(0, busa_modes[muxmode]);
-			lava_lmp_actuate_relay(RL1_SET);
-			{ volatile int n = 0; while (n < 1000000) n++; }
-
-			lmp_json_callback_board_sdmux(ctx, REASON_SEND_REPORT);
-
 			break;
 		}
-		return 0;
-	}
+		break;
 
-	 /* idle processing */
-	q++;
-	if (idle_ok && (q & 0x7fff) == 0)
-		lmp_json_callback_board_sdmux(ctx, REASON_SEND_REPORT);
+	case LEJPCB_COMPLETE:
+
+		if (!update)
+			break;
+
+		if ((old_muxmode / 3) != (muxmode / 3))
+			/* changed host, so remove power from Host SD Reader */
+			LPC_GPIO->CLR[0] = 1 << 17;
+
+		if ((old_muxmode % 3) && !(muxmode % 3))
+			/* DUT has no card any more, disconnect CD / power */
+			lava_lmp_actuate_relay(RL1_CLR);
+
+		/* actually change the power and mux arrangements */
+		lava_lmp_bus_write(0, busa_modes[muxmode]);
+
+		if (!(old_muxmode % 3) && (muxmode % 3)) {
+			/* DUT has a card now, connect CD / power */
+			lava_lmp_actuate_relay(RL1_SET);
+		}
+
+		/* host has a new card now, power the reader... */
+		if ((old_muxmode / 3) != (muxmode / 3) && (muxmode / 3)) {
+			/* wait for host to handle the reader disappearing */
+			lmp_delay(2000000);
+			/* ...allow power to Host SD Reader */
+			LPC_GPIO->SET[0] = 1 << 17;
+		}
+
+		/* fallthru */
+
+	case REASON_SEND_REPORT:
+		lmp_issue_report_header("DUT.pwr\",\"val\":\"");
+		lava_lmp_write_voltage();
+		usb_queue_string("\",\"unit\":\"mV\"},{\"name\":\"modes\",\"modes\":[{\"name\":\"host\",\"mode\":\"");
+		usb_queue_string(sides[muxmode / 3]);
+		usb_queue_string("\"},{\"name\":\"dut\",\"mode\":\"");
+		usb_queue_string(sides[muxmode % 3]);
+		usb_queue_string("\"}]},{\"name\":\"DUT.muxmode\",\"val\":\"");
+		dec(muxmode,str);
+		usb_queue_string(str);
+		usb_queue_string("\"}]}\x04");
+		break;
+	default:
+		break;
+	}
 
 	return 0;
 }

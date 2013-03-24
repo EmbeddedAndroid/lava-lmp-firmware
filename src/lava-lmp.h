@@ -72,6 +72,8 @@ extern int _dec(unsigned int val, char *buf, int nonzero, int d);
 extern void hexdump(unsigned char *p, int len);
 void usb_queue_true_or_false(char b);
 
+extern void lmp_delay(int count);
+
 extern int lava_lmp_eeprom(unsigned int eep, enum eeprom_dir dir, unsigned char *from, int len);
 
 extern void usb_queue_tx(const unsigned char *buf, int len);

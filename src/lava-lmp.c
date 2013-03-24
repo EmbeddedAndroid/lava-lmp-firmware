@@ -160,6 +160,14 @@ void hexdump(unsigned char *p, int len)
 	}
 }
 
+void lmp_delay(int count)
+{
+	volatile int n = 0;
+
+	while (n < count)
+		n++;
+}
+
 int _dec(unsigned int val, char *buf, int nonzero, int d)
 {
 	int n;
@@ -392,6 +400,8 @@ void lava_lmp_pin_init(void)
 		/* LSAD0..7 all output */
 		LPC_GPIO->DIR[0] |= (1 << 17) | (0xff << 8);
 		LPC_IOCON->PIO1_1 =  (1 << 3) | (0 << 0);
+		LPC_GPIO->SET[0] = 1 << 17 | (0x21 << 8); /* gpio0_17 */
+		LPC_GPIO->CLR[0] = (~(0x21 << 8)) & 0xff00;
 		/* LSBD0 DUT_CMD snooping is INPUT */
 		LPC_GPIO->DIR[0] &= ~(1 << 16);
 		analog = 1;
