@@ -397,13 +397,20 @@ void lava_lmp_pin_init(void)
 		/* mux control and power: inert mode = 00000101 */
 		LPC_GPIO->CLR[0] = 0xfa << 8;
 		LPC_GPIO->SET[0] = 5 << 8;
+		/* both disconnected */
+		LPC_GPIO->SET[0] = (0x05 << 8); /* gpio0_17 */
+		LPC_GPIO->CLR[0] = 1 << 17 | ((~(0x05 << 8)) & 0xff00);
 		/* LSAD0..7 all output */
 		LPC_GPIO->DIR[0] |= (1 << 17) | (0xff << 8);
 		LPC_IOCON->PIO1_1 =  (1 << 3) | (0 << 0);
-		LPC_GPIO->SET[0] = 1 << 17 | (0x21 << 8); /* gpio0_17 */
-		LPC_GPIO->CLR[0] = (~(0x21 << 8)) & 0xff00;
 		/* LSBD0 DUT_CMD snooping is INPUT */
 		LPC_GPIO->DIR[0] &= ~(1 << 16);
+
+		/* off */
+
+		lava_lmp_actuate_relay(RL1_CLR);
+		lava_lmp_actuate_relay(RL2_CLR);
+
 		analog = 1;
 		break;
 	case BOARDID_USB:
@@ -504,9 +511,10 @@ void lava_lmp_pin_init(void)
 		LPC_ADC->CR |= (1 << 24) | (1 << 7);
 	}
 
-	/* everything that has relays is OK with them SET by default */
-	lava_lmp_actuate_relay(RL1_SET);
-	lava_lmp_actuate_relay(RL2_SET);
+	if (mode != BOARDID_SDMUX) {
+		lava_lmp_actuate_relay(RL1_SET);
+		lava_lmp_actuate_relay(RL2_SET);
+	}
 
 	/* sort out the actuation timer */
 

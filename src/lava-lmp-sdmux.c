@@ -125,7 +125,7 @@ static const unsigned char busa_modes[] = {
 	0x89, /* DUT: SDB , HOST: SDB -- illegal host wins */
 };
 
-static unsigned char muxmode = 3;
+static unsigned char muxmode = 0;
 static const char const * sides[] = {
 	"disconnect",
 	"uSDA",
@@ -194,17 +194,14 @@ char lmp_json_callback_board_sdmux(struct lejp_ctx *ctx, char reason)
 
 				if (!strcmp(ctx->buf, "disconnect")) {
 					muxmode = masked;
-					update = 1;
 					break;
 				}
 				if (!strcmp(ctx->buf, "uSDA")) {
 					muxmode = masked + mul;
-					update = 1;
 					break;
 				}
 				if (!strcmp(ctx->buf, "uSDB")) {
 					muxmode = masked + (2 * mul);
-					update = 1;
 					break;
 				}
 				/* illegal option */
@@ -223,15 +220,17 @@ char lmp_json_callback_board_sdmux(struct lejp_ctx *ctx, char reason)
 			/* changed host, so remove power from Host SD Reader */
 			LPC_GPIO->CLR[0] = 1 << 17;
 
-		if ((old_muxmode % 3) && !(muxmode % 3))
-			/* DUT has no card any more, disconnect CD / power */
+		if ((old_muxmode % 3) != (muxmode % 3))
+			/* any change in DUT card --> disconnect CD / power */
 			lava_lmp_actuate_relay(RL1_CLR);
 
 		/* actually change the power and mux arrangements */
 		lava_lmp_bus_write(0, busa_modes[muxmode]);
 
-		if (!(old_muxmode % 3) && (muxmode % 3)) {
-			/* DUT has a card now, connect CD / power */
+		if ((muxmode % 3) && (old_muxmode % 3) != (muxmode % 3)) {
+			/* wait for disconnect to go through */
+			lmp_delay(1000000);
+			/* DUT has a card, connect CD / power */
 			lava_lmp_actuate_relay(RL1_SET);
 		}
 
