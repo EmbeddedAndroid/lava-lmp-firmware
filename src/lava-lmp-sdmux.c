@@ -70,7 +70,7 @@ const char * const json_info_sdmux =
 				"\"name\":\"host\","
 				"\"options\":["
 					"{"
-						"\"name\":\"disconnect\"	,"
+						"\"name\":\"disconnect\","
 						"\"mux\":[{\"DUT\":null}]"
 					"},{"
 						"\"name\":\"uSDA\","
@@ -78,6 +78,17 @@ const char * const json_info_sdmux =
 					"},{"
 						"\"name\":\"uSDB\","
 						"\"mux\":[{\"DUT\":\"uSDB\"}]"
+					"}"
+				"]"
+			"},{"
+				"\"name\":\"dut-power\","
+				"\"options\":["
+					"{"
+						"\"name\":\"short-for-off\","
+						"\"mux\":[{\"DUT\":null}]"
+					"},{"
+						"\"name\":\"short-for-on\","
+						"\"mux\":[{\"DUT\":\"uSDA\"}]"
 					"}"
 				"]"
 			"}"
@@ -126,6 +137,7 @@ static const unsigned char busa_modes[] = {
 };
 
 static unsigned char muxmode = 0;
+static unsigned char dut_power_polarity = 0;
 static const char const * sides[] = {
 	"disconnect",
 	"uSDA",
@@ -149,6 +161,9 @@ char lmp_json_callback_board_sdmux(struct lejp_ctx *ctx, char reason)
 	static char update;
 	static unsigned char old_muxmode;
 	char str[10];
+	const char SET_DUT_PWR = 99;
+	const char UPDATE_MUX = 1;
+	const char UPDATE_RLY = 2;
 
 	if (!ctx) {
 		/* idle processing */
@@ -182,15 +197,37 @@ char lmp_json_callback_board_sdmux(struct lejp_ctx *ctx, char reason)
 						mul = 3;
 						masked = muxmode % 3;
 					} else
-						/* illegal name */
-						return -1;
+						if (!strcmp(ctx->buf, "dut-power")) {
+							mul = SET_DUT_PWR;
+						} else
+							/* illegal name */
+							return -1;
 			}
 			if (!strcmp(ctx->path, "modes[].option")) {
 				/* require a previous name */
 				if (mul == -1)
 					return -1;
 
-				update = 1;
+				update |= UPDATE_MUX;
+
+				if (mul == SET_DUT_PWR) {
+					if (!strcmp(ctx->buf, "short-for-off")) {
+						if (dut_power_polarity) {
+							dut_power_polarity = 0;
+							update |= UPDATE_RLY;
+						}
+						break;
+					}
+					if (!strcmp(ctx->buf, "short-for-on")) {
+						if (!dut_power_polarity) {
+							dut_power_polarity = 1;
+							update |= UPDATE_RLY;
+						}
+						break;
+					}
+					/* illegal option */
+					return -1;
+				}
 
 				if (!strcmp(ctx->buf, "disconnect")) {
 					muxmode = masked;
@@ -213,16 +250,34 @@ char lmp_json_callback_board_sdmux(struct lejp_ctx *ctx, char reason)
 
 	case LEJPCB_COMPLETE:
 
-		if (!update)
+		if (update & UPDATE_RLY) {
+			if (muxmode % 3) {
+				if (dut_power_polarity)
+					lava_lmp_actuate_relay(RL1_CLR);
+				else
+					lava_lmp_actuate_relay(RL1_SET);
+			} else {
+				if (dut_power_polarity)
+					lava_lmp_actuate_relay(RL1_SET);
+				else
+					lava_lmp_actuate_relay(RL1_CLR);
+			}
+		}
+
+		if (!(update & UPDATE_MUX))
 			break;
 
 		if ((old_muxmode / 3) != (muxmode / 3))
 			/* changed host, so remove power from Host SD Reader */
 			LPC_GPIO->CLR[0] = 1 << 17;
 
-		if ((old_muxmode % 3) != (muxmode % 3))
+		if ((old_muxmode % 3) != (muxmode % 3)) {
 			/* any change in DUT card --> disconnect CD / power */
-			lava_lmp_actuate_relay(RL1_CLR);
+			if (dut_power_polarity)
+				lava_lmp_actuate_relay(RL1_SET);
+			else
+				lava_lmp_actuate_relay(RL1_CLR);
+		}
 
 		/* actually change the power and mux arrangements */
 		lava_lmp_bus_write(0, busa_modes[muxmode]);
@@ -231,7 +286,10 @@ char lmp_json_callback_board_sdmux(struct lejp_ctx *ctx, char reason)
 			/* wait for disconnect to go through */
 			lmp_delay(1000000);
 			/* DUT has a card, connect CD / power */
-			lava_lmp_actuate_relay(RL1_SET);
+			if (dut_power_polarity)
+				lava_lmp_actuate_relay(RL1_CLR);
+			else
+				lava_lmp_actuate_relay(RL1_SET);
 		}
 
 		/* host has a new card now, power the reader... */
@@ -251,6 +309,11 @@ char lmp_json_callback_board_sdmux(struct lejp_ctx *ctx, char reason)
 		usb_queue_string(sides[muxmode / 3]);
 		usb_queue_string("\"},{\"name\":\"dut\",\"mode\":\"");
 		usb_queue_string(sides[muxmode % 3]);
+		usb_queue_string("\"},{\"name\":\"dut-power\",\"mode\":\"");
+		if (dut_power_polarity)
+			usb_queue_string("short-for-off");
+		else
+			usb_queue_string("short-for-on");
 		usb_queue_string("\"}]},{\"name\":\"DUT.muxmode\",\"val\":\"");
 		dec(muxmode,str);
 		usb_queue_string(str);
