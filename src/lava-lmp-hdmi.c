@@ -242,7 +242,7 @@ char lmp_json_callback_board_hdmi(struct lejp_ctx *ctx, char reason)
 				return -1; /* fail it */
 			break;
 		case LMPPT_modes___name:
-			if (!strcmp(ctx->buf, "eth"))
+			if (strcmp(ctx->buf, "hdmi"))
 				return -1; /* fail it */
 			ctx->st[ctx->sp - 1].b |= 1;
 			break;
@@ -252,17 +252,17 @@ char lmp_json_callback_board_hdmi(struct lejp_ctx *ctx, char reason)
 			if (ctx->st[ctx->sp - 1].b != 1)
 				return -1;
 
-			if (!strcmp(ctx->buf, "off"))
-				lava_lmp_actuate_relay(RL2_SET);
+			if (!strcmp(ctx->buf, "disconnect"))
+				lava_lmp_actuate_relay(RL1_SET);
 
-			if (!strcmp(ctx->buf, "on")) {
+			if (!strcmp(ctx->buf, "passthru")) {
 				LPC_GPIO->SET[0] = 4 << 16;
-				lava_lmp_actuate_relay(RL2_CLR);
+				lava_lmp_actuate_relay(RL1_CLR);
 				break;
 			}
 			if (!strcmp(ctx->buf, "fake")) {
 				LPC_GPIO->CLR[0] = 4 << 16;
-				lava_lmp_actuate_relay(RL2_CLR);
+				lava_lmp_actuate_relay(RL1_CLR);
 			}
 			lmp_json_callback_board_hdmi(ctx, REASON_SEND_REPORT);
 			break;
