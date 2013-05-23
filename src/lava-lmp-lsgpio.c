@@ -60,6 +60,34 @@ const char * const json_info_lsgpio =
 						"\"mux\":[{\"DUT\":null}]"
 					"}"
 				"]"
+			"},"
+			"{"
+				"\"name\":\"a-dir\","
+				"\"options\":["
+					"{"
+						"\"name\":\"in\""
+					"},{"
+						"\"name\":\"out\""
+					"}"
+				"]"
+			"},"
+			"{"
+				"\"name\":\"b-dir\","
+				"\"options\":["
+					"{"
+						"\"name\":\"in\""
+					"},{"
+						"\"name\":\"out\""
+					"}"
+				"]"
+			"},"
+			"{"
+				"\"name\":\"a-data\","
+				"\"data\":\"scalar8\""
+			"},"
+			"{"
+				"\"name\":\"b-data\","
+				"\"data\":\"scalar8\""
 			"}"
 		"]"
 	"}\x04"
@@ -75,17 +103,33 @@ const char * const json_info_lsgpio =
  * 	}
  */
 
+enum {
+	name_valid = 1 << 0,
+	name_audio = 1 << 1,
+	name_a_dir = 1 << 2,
+	name_b_dir = 1 << 3,
+	name_a_data = 1 << 4,
+	name_b_data = 1 << 5,
+};
+
+static const char const *names[] = {
+	"",
+	"audio",
+	"a-dir",
+	"b-dir",
+	"a-data",
+	"b-data"
+};
+
 char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 {
-	static char bus;
-	unsigned char n;
-	unsigned char u;
+	unsigned char n, u;
+	unsigned char bus = 0;
 
 	if (!ctx)
 		return 0;
 	if (reason == REASON_SEND_REPORT) {
 		char str[10];
-		char n;
 
 		lmp_issue_report_header("lsgpio\",\"bus\":[");
 		for (n = 0; n < 2; n++) {
@@ -107,6 +151,90 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 		return 0;
 	}
 
+	if (ctx) {
+		switch (ctx->path_match) {
+		case LMPPT_schema:
+			if (strcmp(&ctx->buf[15], "lsgpio"))
+				return -1; /* fail it */
+			break;
+		case LMPPT_modes___name:
+			for (n = 1; n < ARRAY_SIZE(names); n++)
+				if (!strcmp(ctx->buf, names[n])) {
+					ctx->st[ctx->sp - 1].b =
+							(1 << n) | name_valid;
+					return 0;
+				}
+
+			return -1; /* fail it */
+
+		case LMPPT_modes___option:
+			/* require that we had a correct modes[] name */
+			if (!(ctx->st[ctx->sp - 1].b & name_valid))
+				return -1;
+
+			if (ctx->st[ctx->sp - 1].b & name_audio) {
+
+				if (!strcmp(ctx->buf, "disconnect")) {
+					lava_lmp_actuate_relay(RL1_SET);
+					lava_lmp_actuate_relay(RL2_SET);
+					break;
+				}
+
+				if (!strcmp(ctx->buf, "passthru")) {
+					LPC_GPIO->SET[0] = 4 << 16;
+					lava_lmp_actuate_relay(RL1_CLR);
+					lava_lmp_actuate_relay(RL2_CLR);
+					break;
+				}
+				return -1;
+			}
+
+			if (ctx->st[ctx->sp - 1].b &
+						(name_a_dir | name_b_dir)) {
+
+				if (ctx->st[ctx->sp - 1].b & name_b_dir)
+					bus = 1;
+
+				if (!strcmp(ctx->buf, "in")) {
+					lava_lmp_ls_bus_mode(bus, 1);
+					break;
+				}
+
+				if (!strcmp(ctx->buf, "out")) {
+					lava_lmp_ls_bus_mode(bus, 0);
+					break;
+				}
+				return -1;
+			}
+
+			if (ctx->st[ctx->sp - 1].b &
+						(name_a_data | name_b_data)) {
+
+				if (ctx->st[ctx->sp - 1].b & name_b_data)
+					bus = 1;
+
+				if (strcmp(ctx->buf, "data"))
+					return -1;
+
+				if (ctx->npos != 2)
+					return -1;
+				n = hex_char(ctx->buf[0]);
+				if (n == 0x10)
+					return -1;
+				u = n << 4;
+				n = hex_char(ctx->buf[1]);
+				if (n == 0x10)
+					return -1;
+				lava_lmp_bus_write(bus, u | n);
+			}
+
+			lmp_json_callback_board_lsgpio(ctx, REASON_SEND_REPORT);
+			break;
+		}
+		return 0;
+	}
+
+#if 0
 	if (!(reason & LEJP_FLAG_CB_IS_VALUE)) {
 		switch (ctx->path_match) {
 		case LMPPT_schema:
@@ -180,6 +308,6 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 	case LEJPCB_COMPLETE:
 		break;
 	}
-
+#endif
 	return 0;
 }
