@@ -84,21 +84,29 @@ char lmp_json_callback_board_usb(struct lejp_ctx *ctx, char reason)
 
 	if (ctx) {
 		switch (ctx->path_match) {
-		case 1: /* schema */
+		case LMPPT_schema:
 			if (strcmp(&ctx->buf[15], "usb"))
 				return -1; /* fail it */
 			break;
-		case 4: /* mode */
-			if (!(reason & LEJP_FLAG_CB_IS_VALUE))
-				break;
+		case LMPPT_modes___name:
+			if (strcmp(ctx->buf, "usb"))
+				return -1; /* fail it */
+			ctx->st[ctx->sp - 1].b |= 1;
+			break;
 
-			if (!strcmp(ctx->buf, "off")) {
+		case LMPPT_modes___option:
+			/* require that we had a correct modes[] name */
+			if (ctx->st[ctx->sp - 1].b != 1)
+				return -1;
+
+			if (!strcmp(ctx->buf, "disconnect")) {
 				LPC_GPIO->CLR[0] = 1 << 8;
 				/* disable power to device */
 				LPC_GPIO->CLR[0] = 2 << 8;
 				lava_lmp_actuate_relay(RL1_CLR);
 				lava_lmp_actuate_relay(RL2_CLR);
 			}
+
 			if (!strcmp(ctx->buf, "host")) {
 				/* forced DUT ID low */
 				LPC_GPIO->SET[0] = 1 << 8;
