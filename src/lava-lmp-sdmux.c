@@ -267,9 +267,10 @@ char lmp_json_callback_board_sdmux(struct lejp_ctx *ctx, char reason)
 		if (!(update & UPDATE_MUX))
 			break;
 
-		if ((old_muxmode / 3) != (muxmode / 3))
+		if ((old_muxmode / 3) != (muxmode / 3)) {
 			/* changed host, so remove power from Host SD Reader */
 			LPC_GPIO->CLR[0] = 1 << 17;
+		}
 
 		if ((old_muxmode % 3) != (muxmode % 3)) {
 			/* any change in DUT card --> disconnect CD / power */
@@ -282,6 +283,15 @@ char lmp_json_callback_board_sdmux(struct lejp_ctx *ctx, char reason)
 		/* actually change the power and mux arrangements */
 		lava_lmp_bus_write(0, busa_modes[muxmode]);
 
+		/* if host has a new card now, power the reader... */
+		if ((old_muxmode / 3) != (muxmode / 3) && (muxmode / 3)) {
+			/* wait for DUT leakage to card in reader to fade */
+			lmp_delay(3000000);
+			/* ...allow power to Host SD Reader */
+			LPC_GPIO->SET[0] = 1 << 17;
+		}
+
+		/* if DUT has a card now... */
 		if ((muxmode % 3) && (old_muxmode % 3) != (muxmode % 3)) {
 			/* wait for disconnect to go through */
 			lmp_delay(1000000);
@@ -290,14 +300,6 @@ char lmp_json_callback_board_sdmux(struct lejp_ctx *ctx, char reason)
 				lava_lmp_actuate_relay(RL1_CLR);
 			else
 				lava_lmp_actuate_relay(RL1_SET);
-		}
-
-		/* host has a new card now, power the reader... */
-		if ((old_muxmode / 3) != (muxmode / 3) && (muxmode / 3)) {
-			/* wait for host to handle the reader disappearing */
-			lmp_delay(2000000);
-			/* ...allow power to Host SD Reader */
-			LPC_GPIO->SET[0] = 1 << 17;
 		}
 
 		/* fallthru */
