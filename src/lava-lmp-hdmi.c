@@ -120,6 +120,7 @@ struct reading_session {
 static volatile struct reading_session ring[4];
 static volatile unsigned char head;
 static unsigned char tail;
+static unsigned char hotplug_passthru;
 
 /* on the wire, SCL just changed state */
 
@@ -252,11 +253,17 @@ char lmp_json_callback_board_hdmi(struct lejp_ctx *ctx, char reason)
 			if (ctx->st[ctx->sp - 1].b != 1)
 				return -1;
 
-			if (!strcmp(ctx->buf, "disconnect"))
+			if (!strcmp(ctx->buf, "disconnect")) {
+				hotplug_passthru = 0;
+				LPC_GPIO->CLR[0] = 4 << 16; /* inv LSBD2 DUT HPD force to 0 */
+				LPC_GPIO->CLR[0] = 8 << 16; /* stop 5V going to monitor */
 				lava_lmp_actuate_relay(RL1_SET);
+			}
 
 			if (!strcmp(ctx->buf, "passthru")) {
-				LPC_GPIO->SET[0] = 4 << 16;
+				hotplug_passthru = 1;
+				/* allow 5V to monitor, DUT HPD leave pulled to 1*/
+				LPC_GPIO->SET[0] = (8 + 4) << 16;
 				lava_lmp_actuate_relay(RL1_CLR);
 				break;
 			}
@@ -268,6 +275,13 @@ char lmp_json_callback_board_hdmi(struct lejp_ctx *ctx, char reason)
 			break;
 		}
 		return 0;
+	}
+
+	if (hotplug_passthru) {
+		if (LPC_GPIO->PIN[0] & (1 << (2 + 8))) /* inv LSAD2 in real hpd = 0 */
+			LPC_GPIO->CLR[0] = 1 << (2 + 16); /* inv LSBD2 DUT HP force 0 */
+		else /* real hpd = 1 */
+			LPC_GPIO->SET[0] = 1 << (2 + 16); /* inv LSBD2 DUT HP pullup 1 */
 	}
 
 	 /* idle processing */

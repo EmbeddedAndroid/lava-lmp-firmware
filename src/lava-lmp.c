@@ -436,6 +436,8 @@ void lava_lmp_pin_init(void)
 		/* LSAD0..2 is INPUT */
 		LPC_GPIO->DIR[0] &= ~(7 << 8);
 		LPC_GPIO->DIR[0] |= 0x10 << 8;
+		/* LSB0..3 are outputs */
+		LPC_GPIO->DIR[0] |= 0xf << 16;
 
 		/* notice SCL+SDA go through 74lvcx14 inverter... */
 
