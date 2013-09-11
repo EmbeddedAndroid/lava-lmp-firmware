@@ -11,6 +11,63 @@
 #include <power_api.h>
 #include "lava-lmp.h"
 
+#if 0
+
+static const unsigned char edid[] = {
+/*
+	0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00, 0x09, 0xd1, 0x01, 0x80, 0x45, 0x54, 0x00, 0x00,
+	0x08, 0x15, 0x01, 0x03, 0x80, 0x35, 0x1e, 0x78, 0x2e, 0xb7, 0xd5, 0xa4, 0x56, 0x54, 0x9f, 0x27,
+	0x0c, 0x50, 0x54, 0x21, 0x08, 0x00, 0x81, 0x00, 0x81, 0xc0, 0x81, 0x80, 0xa9, 0xc0, 0xb3, 0x00,
+	0xd1, 0xc0, 0x81, 0xc0, 0x01, 0x01, 0x02, 0x3a, 0x80, 0x18, 0x71, 0x38, 0x2d, 0x40, 0x58, 0x2c,
+	0x45, 0x00, 0xdd, 0x0c, 0x11, 0x00, 0x00, 0x1e, 0x00, 0x00, 0x00, 0xff, 0x00, 0x42, 0x32, 0x42,
+	0x30, 0x30, 0x36, 0x31, 0x36, 0x53, 0x4c, 0x30, 0x0a, 0x20, 0x00, 0x00, 0x00, 0xfd, 0x00, 0x32,
+	0x4c, 0x1e, 0x53, 0x11, 0x00, 0x0a, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20, 0x00, 0x00, 0x00, 0xfc,
+	0x00, 0x42, 0x65, 0x6e, 0x51, 0x20, 0x42, 0x4c, 0x32, 0x34, 0x30, 0x30, 0x0a, 0x20, 0x00, 0x0f,
+*/
+
+	0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x00,
+
+	0x1a, 0x8c, /* "FSL" */
+	0x8a, 0x23, /* product code */
+	0x01, 0x23, 0x45, 0x67, /* serial # */
+	0x08, 2013 - 1990, /* week 8, 2013 */
+	0x01, /* edid structure version */
+	0x03, /* edid structure rev number */
+	0x82, /* support HDMA-A connector style */
+	0x35, /* H screen size cm */
+	0x1e, /* V screen size cm */
+	0xff, /* gamma - undefined */
+	0x20 | (3 << 3) | (1 << 2) | (1 << 1), /* feature support */
+
+	0xb7, 0xd5, 0xa4, 0x56, 0x54, 0x9f, 0x27, 0x0c, 0x50, 0x54, /* chromaticity */
+
+	0x21, 0x08, 0x00, /* established timings */
+
+	/* standard timings */
+	0x81, 0x00,  0x81, 0xc0,  0x81, 0x80,  0xa9, 0xc0,
+	0xb3, 0x00,  0xd1, 0xc0,  0x81, 0xc0,  0x01, 0x01,
+
+	/* detailed timing descriptors */
+
+	0x02, 0x3a, 0x80, 0x18, 0x71, 0x38, 0x2d, 0x40, 0x58, 0x2c,
+	0x45, 0x00, 0xdd, 0x0c, 0x11, 0x00, 0x00, 0x1e,
+
+	0x00, 0x00, 0x00, 0xff, 0x00, 0x42, 0x32, 0x42, 0x30, 0x30,
+	0x36, 0x31, 0x36, 0x53, 0x4c, 0x30, 0x0a, 0x20,
+
+	0x00, 0x00, 0x00, 0xfd, 0x00, 0x32, 0x4c, 0x1e, 0x53, 0x11,
+	0x00, 0x0a, 0x20, 0x20, 0x20, 0x20, 0x20, 0x20,
+
+	/* product name */
+	0x00, 0x00, 0x00, 0xfc, 0x00, 'T', 'r', 'i', 't', 'o',
+	'n', ' ', 'E', 'V', 'B', ' ', ':', ')',
+
+	0x00,
+
+	0x0f,
+
+};
+#endif
 
 const char * const json_info_hdmi =
 		","
@@ -121,6 +178,174 @@ static volatile struct reading_session ring[4];
 static volatile unsigned char head;
 static unsigned char tail;
 static unsigned char hotplug_passthru;
+static unsigned int write_edid;
+
+enum {
+	PKT_IDLE,
+
+	PKT_DO_START_SETUP,
+	PKT_DO_START,
+
+	PKT_GET_BYTE,
+
+	PKT_DO_POST_START_CLK_DOWN,
+	PKT_DO_PAYLOAD_SETUP,
+	PKT_DO_PAYLOAD_CLK,
+	PKT_DO_POST_WAIT,
+
+	PKT_DO_STOP_SETUP1,
+	PKT_DO_STOP_SETUP2,
+	PKT_DO_STOP_SETUP3,
+	PKT_DO_STOP,
+};
+
+static int transfer_state = PKT_IDLE;
+static unsigned char payload;
+static unsigned char payload_bit_ctr;
+static unsigned char payload_ptr;
+static unsigned char payload_byte_ctr;
+static char coding;
+
+int decode_hex_edid(unsigned char c)
+{
+	static unsigned char c1;
+
+	if (c >= 'a' && c <='f')
+		c = 10 + (c - 'a');
+	else
+		if (c >= 'A' && c <= 'F')
+			c = 10 + (c - 'A');
+		else
+			if (c >= '0' && c <= '9')
+				c -= '0';
+			else
+				return 1;
+
+	if (write_edid & 1)
+		eeprom[write_edid >> 1] = c1 | c;
+	else
+		c1 = c << 4; 
+
+	write_edid++;
+	return (write_edid >> 1) >= sizeof(eeprom);
+}
+
+
+/* 0_16 = SCL, 0_17 = SDA */
+#define SCL (1 << 16)
+#define SDA (1 << 17)
+
+void i2c(void)
+{
+	/* LED2 flickering */
+	LPC_GPIO->NOT[0] = 1 << 7;
+
+	switch (transfer_state) {
+
+	case PKT_IDLE:
+		if (coding)
+			transfer_state = PKT_DO_START_SETUP;
+		payload_ptr = 0;
+		break;
+
+	case PKT_DO_START_SETUP:
+		LPC_GPIO->SET[0] = SCL | SDA;
+		transfer_state++;
+		break;
+	case PKT_DO_START:
+		LPC_GPIO->CLR[0] = SDA;
+		payload_byte_ctr = 0;
+		transfer_state++;
+		break;
+
+	case PKT_GET_BYTE:
+		switch (payload_byte_ctr++) {
+		case 0:
+			payload = (0x50 << 1) | 0;
+			break;
+		case 1:
+			payload = payload_ptr;
+			break;
+		case 2:
+			payload = eeprom[payload_ptr++];
+			break;
+		}
+		payload_bit_ctr = 9;
+
+	/* send a bit */
+
+	case PKT_DO_POST_START_CLK_DOWN:
+		LPC_GPIO->CLR[0] = SCL;
+		transfer_state = PKT_DO_PAYLOAD_SETUP;
+		break;
+
+	case PKT_DO_PAYLOAD_SETUP:
+		if (payload & 128)
+			LPC_GPIO->SET[0] = SDA;
+		else
+			LPC_GPIO->CLR[0] = SDA;
+		payload <<= 1;
+		payload |= 1; /* make sure b8 is high */
+		payload_bit_ctr--;
+		transfer_state++;
+		break;
+
+	case PKT_DO_PAYLOAD_CLK:
+		if (!payload_bit_ctr) /* ack */
+			/* ack bit */
+			if (!LPC_GPIO->W0[10])
+				/* ack is high / missing */
+				break;
+
+		/* ready to move on */
+
+		LPC_GPIO->SET[0] = SCL;
+		transfer_state++;
+		break;
+
+	case PKT_DO_POST_WAIT:
+		if (payload_bit_ctr) {
+			transfer_state = PKT_DO_POST_START_CLK_DOWN;
+			break;
+		}
+
+		/* byte is done and ack was present */
+
+		if (payload_byte_ctr < 3)
+			transfer_state = PKT_GET_BYTE;
+		else
+			transfer_state++;
+		break;
+
+	case PKT_DO_STOP_SETUP1:
+		LPC_GPIO->CLR[0] = SCL;
+		transfer_state++;
+		break;
+
+	case PKT_DO_STOP_SETUP2:
+		LPC_GPIO->CLR[0] = SDA;
+		transfer_state++;
+		break;
+
+	case PKT_DO_STOP_SETUP3:
+		LPC_GPIO->SET[0] = SCL;
+		transfer_state++;
+		break;
+
+	case PKT_DO_STOP:
+		LPC_GPIO->SET[0] = SDA; /* going hi with clock hi means STOP */
+
+		if (payload_ptr < (write_edid >> 1))
+			transfer_state = PKT_DO_START_SETUP;
+		else {
+			transfer_state = PKT_IDLE;
+			coding = 0;
+			/* LED */
+			LPC_GPIO->SET[0] = 1 << 7;
+		}
+		break;
+	}
+}
 
 /* on the wire, SCL just changed state */
 
@@ -131,6 +356,10 @@ void NMI_Handler(void)
 	static unsigned char i2c_shifter;
 	static unsigned char i2c_ads;
 	static unsigned char eeprom_ads;
+
+
+	if (coding)
+		goto bail;
 
 	newdata = !LPC_GPIO->W0[10];
 	
@@ -241,6 +470,7 @@ char lmp_json_callback_board_hdmi(struct lejp_ctx *ctx, char reason)
 		case LMPPT_schema:
 			if (strcmp(&ctx->buf[15], "hdmi"))
 				return -1; /* fail it */
+			write_edid = 0;
 			break;
 		case LMPPT_modes___name:
 			if (strcmp(ctx->buf, "hdmi"))
@@ -269,9 +499,23 @@ char lmp_json_callback_board_hdmi(struct lejp_ctx *ctx, char reason)
 			}
 			if (!strcmp(ctx->buf, "fake")) {
 				LPC_GPIO->CLR[0] = 4 << 16;
-				lava_lmp_actuate_relay(RL1_CLR);
+				lava_lmp_actuate_relay(RL1_SET);
 			}
 			lmp_json_callback_board_hdmi(ctx, REASON_SEND_REPORT);
+			break;
+
+		case LMPPT_edid:
+			LPC_GPIO->CLR[0] = 4 << 16;
+			lava_lmp_actuate_relay(RL1_SET);
+
+			if (reason == LEJPCB_VAL_STR_CHUNK ||
+					reason == LEJPCB_VAL_STR_END)
+				for (n = 0; n < ctx->npos; n++)
+					if (decode_hex_edid(ctx->buf[n]))
+						return -1;
+
+			if (reason == LEJPCB_VAL_STR_END)
+				coding = 1;
 			break;
 		}
 		return 0;
@@ -286,6 +530,10 @@ char lmp_json_callback_board_hdmi(struct lejp_ctx *ctx, char reason)
 
 	 /* idle processing */
 	q++;
+
+	if (coding && !(q & 0x7))
+		i2c();
+
 	if (!(q & 0x7fff))
 		return lmp_json_callback_board_hdmi(ctx, REASON_SEND_REPORT);
 

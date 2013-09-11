@@ -42,7 +42,8 @@ static const char * const paths[] = {
 	"jack",			/* 6 */
 	"identify",		/* 7 */
 	"modes[].name",		/* 8 */
-	"modes[].option"	/* 9 */
+	"modes[].option",	/* 9 */
+	"edid",			/* 10 */
 };
 
 void lmp_issue_report_header(const char *name)
@@ -86,7 +87,7 @@ lmp_json_callback(struct lejp_ctx *ctx, char reason)
 		return 0;
 
 	switch (ctx->path_match) {
-	case 1: /* schema */
+	case LMPPT_schema:
 		/* schema has to be in "org.linaro.lmp" namespace */
 		if (strncmp(ctx->buf, schema_base, 15))
 			return -1;
@@ -109,7 +110,7 @@ lmp_json_callback(struct lejp_ctx *ctx, char reason)
 		lejp_change_callback(ctx, lmp_json_callback_board);
 		return lmp_json_callback_board(ctx, reason);
 
-	case 7: /* identify */
+	case LMPPT_identify:
 		LPC_GPIO->CLR[0] = 1 << 2;
 		if (reason == LEJPCB_VAL_STR_END && !strcmp(ctx->buf, "toggle"))
 			flash_led ^= 1;

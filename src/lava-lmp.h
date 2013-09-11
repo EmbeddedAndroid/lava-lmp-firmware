@@ -42,7 +42,8 @@ enum lmp_parsing_tokens {
 	LMPPT_jack,
 	LMPPT_identify,
 	LMPPT_modes___name,
-	LMPPT_modes___option
+	LMPPT_modes___option,
+	LMPPT_edid,
 };
 
 #define EEPROM_RESERVED_OFFSET 64
