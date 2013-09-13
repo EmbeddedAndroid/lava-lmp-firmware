@@ -197,6 +197,11 @@ enum {
 	PKT_DO_STOP_SETUP2,
 	PKT_DO_STOP_SETUP3,
 	PKT_DO_STOP,
+
+	PKT_DO_INTRA_START_SETUP1,
+	PKT_DO_INTRA_START_SETUP2,
+	PKT_DO_INTRA_START_SETUP3,
+	PKT_DO_INTRA_START,
 };
 
 static int transfer_state = PKT_IDLE;
@@ -204,7 +209,13 @@ static unsigned char payload;
 static unsigned char payload_bit_ctr;
 static unsigned char payload_ptr;
 static unsigned char payload_byte_ctr;
+static char reading;
 static char coding;
+static char verified;
+
+#define I2C_CODING_READ 1
+#define I2C_CODING_WRITE 2
+#define I2C_CODING_FAILED 3
 
 int decode_hex_edid(unsigned char c)
 {
@@ -237,20 +248,34 @@ int decode_hex_edid(unsigned char c)
 
 void i2c(void)
 {
-	/* LED2 flickering */
-	LPC_GPIO->NOT[0] = 1 << 7;
+	if (coding == I2C_CODING_FAILED) {
+		if (!(write_edid++ & 0x3fff))
+			LPC_GPIO->NOT[0] = 1 << 7;
+	} else
+		/* LED2 flickering */
+		LPC_GPIO->NOT[0] = 1 << 7;
 
 	switch (transfer_state) {
 
 	case PKT_IDLE:
+		LPC_GPIO->SET[0] = SCL | SDA;
+
 		if (coding)
 			transfer_state = PKT_DO_START_SETUP;
 		payload_ptr = 0;
+		payload_bit_ctr = 10;
 		break;
 
 	case PKT_DO_START_SETUP:
-		LPC_GPIO->SET[0] = SCL | SDA;
-		transfer_state++;
+		LPC_GPIO->SET[0] = SDA;
+		if (payload_bit_ctr) {
+			payload_bit_ctr--;
+
+			LPC_GPIO->NOT[0] = SCL;
+		}
+
+		if (!payload_bit_ctr)
+			transfer_state++;
 		break;
 	case PKT_DO_START:
 		LPC_GPIO->CLR[0] = SDA;
@@ -259,6 +284,8 @@ void i2c(void)
 		break;
 
 	case PKT_GET_BYTE:
+		reading = 0;
+
 		switch (payload_byte_ctr++) {
 		case 0:
 			payload = (0x50 << 1) | 0;
@@ -267,39 +294,68 @@ void i2c(void)
 			payload = payload_ptr;
 			break;
 		case 2:
-			payload = eeprom[payload_ptr++];
+			if (coding == I2C_CODING_WRITE) {
+				payload = eeprom[payload_ptr++];
+				payload_byte_ctr = 99;
+			} else
+				payload = (0x50 << 1) | 1; /* read */
+			break;
+		case 3:
+			reading = 1;
+			payload_byte_ctr = 99;
 			break;
 		}
 		payload_bit_ctr = 9;
+
+		/* fallthru */
 
 	/* send a bit */
 
 	case PKT_DO_POST_START_CLK_DOWN:
 		LPC_GPIO->CLR[0] = SCL;
+		if (reading)
+			LPC_GPIO->SET[0] = SDA;
 		transfer_state = PKT_DO_PAYLOAD_SETUP;
 		break;
 
 	case PKT_DO_PAYLOAD_SETUP:
-		if (payload & 128)
+		payload_bit_ctr--;
+
+		/* read: leave high including b9, do not acknowledge */
+		if ((reading) ||
+				/* write: write data until b9, force high */
+				(!reading && (payload & 128)))
 			LPC_GPIO->SET[0] = SDA;
 		else
 			LPC_GPIO->CLR[0] = SDA;
-		payload <<= 1;
-		payload |= 1; /* make sure b8 is high */
-		payload_bit_ctr--;
+		if (!reading || (reading && payload_bit_ctr)) {
+			payload <<= 1;
+
+			if (!reading)
+				payload |= 1; /* make sure b8 is high */
+		}
 		transfer_state++;
 		break;
 
 	case PKT_DO_PAYLOAD_CLK:
-		if (!payload_bit_ctr) /* ack */
-			/* ack bit */
-			if (!LPC_GPIO->W0[10])
-				/* ack is high / missing */
-				break;
-
-		/* ready to move on */
 
 		LPC_GPIO->SET[0] = SCL;
+
+		if (payload_bit_ctr && reading && !LPC_GPIO->W0[9])
+			payload |= 1;
+
+		if (!payload_bit_ctr) { /* ack */
+			if (!reading) {
+				if (!LPC_GPIO->W0[9])
+					payload_byte_ctr = 100; /* force retry */
+			} else {
+				if (eeprom[payload_ptr] != payload)
+					verified = 0;
+				eeprom[payload_ptr++] = payload;
+			}
+		}
+
+		/* ready to move on */
 		transfer_state++;
 		break;
 
@@ -308,11 +364,21 @@ void i2c(void)
 			transfer_state = PKT_DO_POST_START_CLK_DOWN;
 			break;
 		}
+		/* at end of byte */
+
+		/* after sending the read ads, we need to do a START */
+		if (coding == I2C_CODING_READ && payload_byte_ctr == 2) {
+			transfer_state = PKT_DO_INTRA_START_SETUP1;
+			break;
+		}
 
 		/* byte is done and ack was present */
-
-		if (payload_byte_ctr < 3)
+		if (payload_byte_ctr < 99) {
 			transfer_state = PKT_GET_BYTE;
+			break;
+		}
+		if (payload_byte_ctr == 100)
+			transfer_state = PKT_DO_START_SETUP;
 		else
 			transfer_state++;
 		break;
@@ -338,11 +404,39 @@ void i2c(void)
 		if (payload_ptr < (write_edid >> 1))
 			transfer_state = PKT_DO_START_SETUP;
 		else {
+			if (coding == I2C_CODING_WRITE) {
+				coding = I2C_CODING_READ;
+				verified = 1;
+			} else {
+				coding = 0;
+				if (!verified)
+					coding = I2C_CODING_FAILED;
+			}
 			transfer_state = PKT_IDLE;
-			coding = 0;
 			/* LED */
 			LPC_GPIO->SET[0] = 1 << 7;
 		}
+		break;
+
+
+	case PKT_DO_INTRA_START_SETUP1:
+		LPC_GPIO->CLR[0] = SCL;
+		transfer_state++;
+		break;
+
+	case PKT_DO_INTRA_START_SETUP2:
+		LPC_GPIO->SET[0] = SDA;
+		transfer_state++;
+		break;
+
+	case PKT_DO_INTRA_START_SETUP3:
+		LPC_GPIO->SET[0] = SCL;
+		transfer_state++;
+		break;
+
+	case PKT_DO_INTRA_START:
+		LPC_GPIO->CLR[0] = SDA;
+		transfer_state = PKT_GET_BYTE;
 		break;
 	}
 }
@@ -461,7 +555,13 @@ char lmp_json_callback_board_hdmi(struct lejp_ctx *ctx, char reason)
 		usb_queue_string("NULL");
 		usb_queue_string("\"}, {\"name\":\"DUT.5V\",\"val\":\"");
 		lava_lmp_write_voltage();
-		usb_queue_string("\",\"unit\":\"mV\"}]}\x04");
+		usb_queue_string("\",\"unit\":\"mV\"},{\"name\":\"data\",\"val\":\"");
+		hexdump(eeprom, 0x80);
+		usb_queue_string("\"},{\"verified\":\"");
+		str[0] = '0' + verified;
+		str[1] = '\0';
+		usb_queue_string(str);
+		usb_queue_string("\"}]}\x04");
 		return 0;
 	}
 
@@ -515,7 +615,7 @@ char lmp_json_callback_board_hdmi(struct lejp_ctx *ctx, char reason)
 						return -1;
 
 			if (reason == LEJPCB_VAL_STR_END)
-				coding = 1;
+				coding = I2C_CODING_WRITE;
 			break;
 		}
 		return 0;
@@ -531,10 +631,10 @@ char lmp_json_callback_board_hdmi(struct lejp_ctx *ctx, char reason)
 	 /* idle processing */
 	q++;
 
-	if (coding && !(q & 0x7))
+	if (coding && !(q & 0x3))
 		i2c();
 
-	if (!(q & 0x7fff))
+	if ((!coding || coding == I2C_CODING_FAILED) && !(q & 0x7fff))
 		return lmp_json_callback_board_hdmi(ctx, REASON_SEND_REPORT);
 
 	if (head == tail)

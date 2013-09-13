@@ -14,4 +14,9 @@ HDMI_LMP=/dev/serial/by-id/usb-Linaro_Ltd_LavaLMP_LL0c000000000777-if00
 # You may need to do something at the device being reprogrammed to disable
 # EEPROM write protect first.
 
+stty -F $HDMI_LMP -isig  -icanon -iexten -echo -xcase -echoe -echok -echonl -echoctl -echoke -inlcr -ignbrk -ignpar -igncr -icrnl -imaxbel -ixon -ixoff -ixany -iuclc -onlcr -opost -olcuc -ocrnl -onlret min 1 time 0 eof 1 ispeed 115200 ospeed 115200 -cstopb -crtscts -parenb cread clocal cs8
+
+# need to do this to make it work
+echo -n -e "\x02{\"schema\":\"org.linaro.lmp.info\"}\x04" > $HDMI_LMP
+
 echo -n -e "\x02{\"schema\":\"org.linaro.lmp.hdmi\", \"edid\":\"$1\"}\x04" > $HDMI_LMP
