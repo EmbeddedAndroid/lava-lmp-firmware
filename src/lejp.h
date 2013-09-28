@@ -74,7 +74,8 @@ enum lejp_callbacks {
 	LEJPCB_ARRAY_END	= 15,
 
 	LEJPCB_OBJECT_START	= 16,
-	LEJPCB_OBJECT_END	= 17
+	LEJPCB_OBJECT_END	= 17,
+	LEJPCB_SELF_SERVICE	= 18
 };
 
 /**
@@ -150,7 +151,7 @@ extern char _lejp_callback(struct lejp_ctx *ctx, char reason);
 #endif
 #ifndef LEJP_STRING_CHUNK
 /* must be >= 30 to assemble floats */
-#define LEJP_STRING_CHUNK 64
+#define LEJP_STRING_CHUNK 32
 #endif
 
 enum num_flags {
@@ -182,6 +183,7 @@ struct lejp_ctx {
 	unsigned char npos;
 	unsigned char dcount;
 	unsigned char f;
+	unsigned char self_service;
 
 	/* parse callback */
 	char (*callback)(struct lejp_ctx *ctx, char reason);

@@ -30,15 +30,16 @@ all:
 		@ exit 1
 		@fi
 	@done
-	@M=`mount |grep DISABLD | cut -d' ' -f3- | sed s/\ type\ .*//g`
+	@M=`realpath /dev/disk/by-id/usb-NXP_LPC1XXX_IFLASH_ISP-0:0`
+	@M=`mount | grep "$$M" | cut -d' ' -f3`
 	@if [ -z "$$M" ] ; then
 	@ echo "LPC11U24 not mounted"
 	@ exit 1
 	@fi
 	@ echo copying ./$(IMG) to $$M
 	@ M=`echo $$M | sed 's/ /\\ /g'`
-	@ dd conv=nocreat,notrunc if=./$(IMG) of="$$M/firmware.bin"
-	@ umount "$$M"
+	@ sudo dd conv=nocreat,notrunc if=./$(IMG) of="$$M/firmware.bin"
+	@ sudo umount "$$M"
 
 .ONESHELL:
 clean:

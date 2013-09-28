@@ -44,6 +44,8 @@ static const char * const paths[] = {
 	"modes[].name",		/* 8 */
 	"modes[].option",	/* 9 */
 	"edid",			/* 10 */
+	"spi.write",		/* 11 */
+	"spi.read",		/* 12 */
 };
 
 void lmp_issue_report_header(const char *name)
@@ -150,9 +152,8 @@ void lmp_parse(const unsigned char *buf, int len)
 		lejp_destruct(&ctx);
 		framing = 0;
 		if (n >= 0) {
-			len -= n;
-			buf += n;
-		} else
-			len = 0;
+			buf += (len - n);
+			len = n;
+		}
 	} while (len);
 }

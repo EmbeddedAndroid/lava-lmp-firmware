@@ -13,7 +13,7 @@ MEMORY
   /* Define a symbol for the top of each memory region */
   __top_MFlash32 = 0x0 + 0x8000;
   __top_RamLoc4 = 0x10000000 + 0xf40; /* because USB stack takes last 4K */
-  __top_RamFull = 0x10000000 + 0x1800; /* because USB stack takes last 4K */
+  __top_RamFull = 0x10000000 + 0x1000; /* because USB stack takes last 4K */
   __top_RamUsb2 = 0x20004000 + 0x800;
 
 ENTRY(ResetISR)

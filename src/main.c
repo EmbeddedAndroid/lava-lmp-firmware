@@ -85,6 +85,8 @@ const uint8_t VCOM_UnsetSerial[] = {
 	_('r'), _('i'), _('a'), _('l'), _(' '), _('N'), _('u'), _('m'),
 };
 
+#define RX_BUFS 4
+
 /* this state and buffers go into the middle of the "USB RAM" */
 
 struct vcom_data {
@@ -92,9 +94,11 @@ struct vcom_data {
 		(USB_SERIAL_NUMBER_CHARS * 2)] __attribute__ ((aligned(4)));
 	USBD_HANDLE_T hUsb;
 	USBD_HANDLE_T hCdc;
-	unsigned char rxBuf[USB_HS_MAX_BULK_PACKET];
+	unsigned char rxBuf[RX_BUFS][USB_HS_MAX_BULK_PACKET + 1];
 	unsigned char txBuf[USB_HS_MAX_BULK_PACKET];
-	volatile uint8_t rxlen;
+	volatile uint8_t rx_next_write;
+	volatile uint8_t rx_next_read;
+	volatile uint8_t rxlen[RX_BUFS];
 	volatile uint8_t txlen;
 	volatile uint8_t pend_tx;
 	volatile uint8_t pend_rx;
@@ -109,7 +113,7 @@ char flash_led;
 static USBD_API_INIT_PARAM_T usb_param = {
 	.usb_reg_base = LPC_USB_BASE,
 	.mem_base = 0x10001000,
-	.mem_size = 0x600,
+	.mem_size = 0x640,
 	.max_num_ep = 3,
 };
 
@@ -121,7 +125,7 @@ static const USB_CORE_DESCS_T desc = {
 };
 
 static USBD_CDC_INIT_PARAM_T cdc_param = {
-	.mem_base = 0x10001600,
+	.mem_base = 0x10001640,
 	.mem_size = 0x1c0,
 	.cif_intf_desc = &VCOM_ConfigDescriptor[USB_CONFIGUARTION_DESC_SIZE],
 	.dif_intf_desc = &VCOM_ConfigDescriptor[USB_CONFIGUARTION_DESC_SIZE +
@@ -208,14 +212,21 @@ static ErrorCode_t VCOM_out(USBD_HANDLE_T hUsb, void *data, uint32_t event)
 	if (event != USB_EVT_OUT)
 		return LPC_OK;
 
-	if (vcom->rxlen || vcom->pend_rx) {
+	if (vcom->rxlen[vcom->rx_next_write] || vcom->pend_rx) {
 		/* can't cope with it right now, foreground will get it later */
 		vcom->pend_rx = 1;
 
 		return LPC_OK;
 	}
 
-	vcom->rxlen = usbapi->hw->ReadEP(hUsb, USB_CDC_EP_BULK_OUT, vcom->rxBuf);
+	vcom->rxlen[vcom->rx_next_write] =
+		usbapi->hw->ReadEP(hUsb, USB_CDC_EP_BULK_OUT,
+				vcom->rxBuf[vcom->rx_next_write]);
+
+	if (vcom->rx_next_write == RX_BUFS - 1)
+		vcom->rx_next_write = 0;
+	else
+		vcom->rx_next_write++;
 
 	return LPC_OK;
 }
@@ -259,32 +270,47 @@ int main(void)
 	usbapi->core->RegisterEpHandler(vcom->hUsb,
 			(USB_CDC_EP_BULK_OUT & 0xf) << 1, VCOM_out, vcom);
 
+	vcom->rx_next_read = 0;
+	vcom->rx_next_write = 0;
+
 	NVIC_EnableIRQ(USB_IRQn); /* enable USB0 IRQ */
 	usbapi->hw->Connect(vcom->hUsb, 1); /* USB Connect */
 
 	/* foreground code feeds board-specific JSON parser */
 
 	while (1) {
+		if (!vcom->rxlen[vcom->rx_next_read]) {
+			if (!vcom->pend_rx) {
+				if (flash_led && !(q++ & 0x7fff)) {
+					if (q & 0x8000)
+						LPC_GPIO->SET[0] = 1 << 2;
+					else
+						LPC_GPIO->CLR[0] = 1 << 2;
+				}
 
-		if (flash_led && !(q++ & 0x7fff)) {
-			if (q & 0x8000)
-				LPC_GPIO->SET[0] = 1 << 2;
-			else
-				LPC_GPIO->CLR[0] = 1 << 2;
-		}
 
-		if (idle_ok)
-			lmp_json_callback_board(NULL, -1);
-
-		if (!vcom->rxlen) {
-			if (!vcom->pend_rx)
+				if (idle_ok)
+					lmp_json_callback_board(NULL, -1);
 				continue;
-			vcom->rxlen = usbapi->hw->ReadEP(
-				vcom->hUsb, USB_CDC_EP_BULK_OUT, vcom->rxBuf);
+			}
+			NVIC_DisableIRQ(USB_IRQn);
+			vcom->rxlen[vcom->rx_next_write] = usbapi->hw->ReadEP(
+				vcom->hUsb, USB_CDC_EP_BULK_OUT, vcom->rxBuf[vcom->rx_next_write]);
+			if (vcom->rx_next_write == RX_BUFS - 1)
+				vcom->rx_next_write = 0;
+			else
+				vcom->rx_next_write++;
 			vcom->pend_rx = 0;
+			NVIC_EnableIRQ(USB_IRQn);
 		}
-		lmp_parse(vcom->rxBuf, vcom->rxlen);
-		vcom->rxlen = 0;
+		lmp_parse(vcom->rxBuf[vcom->rx_next_read], vcom->rxlen[vcom->rx_next_read]);
+		NVIC_DisableIRQ(USB_IRQn);
+		vcom->rxlen[vcom->rx_next_read] = 0;
+		if (vcom->rx_next_read == RX_BUFS - 1)
+			vcom->rx_next_read = 0;
+		else
+			vcom->rx_next_read++;
+		NVIC_EnableIRQ(USB_IRQn);
 	}
 
 spin:

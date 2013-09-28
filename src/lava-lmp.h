@@ -44,6 +44,8 @@ enum lmp_parsing_tokens {
 	LMPPT_modes___name,
 	LMPPT_modes___option,
 	LMPPT_edid,
+	LMPPT_spi__write,
+	LMPPT_spi__read,
 };
 
 #define EEPROM_RESERVED_OFFSET 64
@@ -65,12 +67,14 @@ extern void lmp_default_cmd(int c, const char *json);
 extern void lmp_issue_report_header(const char *name);
 
 extern unsigned char hex_char(const char c);
+unsigned int atoi(const char *s);
 extern void hex8(unsigned int val, char *buf);
 extern void hex4(unsigned int val, char *buf);
 extern void hex2(unsigned char val, char *buf);
 extern int dec(unsigned int val, char *buf);
 extern int _dec(unsigned int val, char *buf, int nonzero, int d);
 extern void hexdump(unsigned char *p, int len);
+extern void _hexdump(unsigned char *p, int len);
 void usb_queue_true_or_false(char b);
 
 extern void lmp_delay(int count);

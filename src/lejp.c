@@ -33,12 +33,17 @@ lejp_construct(struct lejp_ctx *ctx,
 	ctx->sp = 0;
 	ctx->ipos = 0;
 	ctx->ppos = 0;
+	ctx->dcount = 0;
+	ctx->f = 0;
 	ctx->path_match = 0;
+	ctx->path_match_len = 0;
+	ctx->path[0] = '\0';
 	ctx->callback = callback;
 	ctx->user = user;
 	ctx->paths = paths;
 	ctx->count_paths = count_paths;
 	ctx->callback(ctx, LEJPCB_CONSTRUCTED);
+	ctx->self_service = 0;
 }
 
 /**
@@ -132,6 +137,7 @@ lejp_parse(struct lejp_ctx *ctx, const unsigned char *json, int len)
 				ret = LEJP_REJECT_IDLE_NO_BRACE;
 				goto reject;
 			}
+			ctx->path_match = 0;
 			ctx->callback(ctx, LEJPCB_OBJECT_START);
 			ctx->st[ctx->sp].s = LEJP_MEMBERS;
 			break;
@@ -154,6 +160,7 @@ lejp_parse(struct lejp_ctx *ctx, const unsigned char *json, int len)
 			goto add_stack_level;
 
 		case LEJP_MP_STRING:
+again:
 			if (c == '\"') {
 				if (!ctx->sp) {
 					ret = LEJP_REJECT_MP_STRING_UNDERRUN;
@@ -166,6 +173,7 @@ lejp_parse(struct lejp_ctx *ctx, const unsigned char *json, int len)
 						ret = LEJP_REJECT_CALLBACK;
 						goto reject;
 					}
+					ctx->npos = 0;
 				}
 				/* pop */
 				ctx->sp--;
@@ -179,6 +187,19 @@ lejp_parse(struct lejp_ctx *ctx, const unsigned char *json, int len)
 				ret = LEJP_REJECT_MP_ILLEGAL_CTRL;
 				goto reject;
 			}
+			if (ctx->self_service) {
+				if (!ctx->sp || ctx->st[ctx->sp - 1].s != LEJP_MP_DELIM) {
+					ctx->buf[0] = c;
+					ctx->npos = 1;
+					ctx->callback(ctx, LEJPCB_VAL_STR_CHUNK);
+					if (len--) {
+						c = *json++;
+						goto again;
+					}
+					continue;
+				}
+			}
+
 			goto emit_string_char;
 
 		case LEJP_MP_STRING_ESC:
@@ -490,6 +511,7 @@ lejp_parse(struct lejp_ctx *ctx, const unsigned char *json, int len)
 			if (c == '}') {
 				ctx->callback(ctx, LEJPCB_OBJECT_END);
 				if (ctx->sp == 0) {
+					ctx->path_match = 0;
 					ctx->callback(ctx, LEJPCB_COMPLETE);
 					/* done, return unused amount */
 					return len;

@@ -1,6 +1,7 @@
 #!/bin/sh
 
-HDMI_LMP=/dev/serial/by-id/usb-Linaro_Ltd_LavaLMP_LL0c000000000777-if00
+#HDMI_LMP=/dev/serial/by-id/usb-Linaro_Ltd_LavaLMP_LL0c000000000777-if00
+HDMI_LMP=/dev/serial/by-id/usb-Linaro_Ltd_LavaLMP_LL0c000013060043-if00
 
 #
 # To program edid:

@@ -79,7 +79,17 @@ unsigned char hex_char(const char c)
 	if (c >= 'A' && c <= 'F')
 		return 10 + c - 'A';
 
-	return 0x10;
+	return 0x55;
+}
+
+unsigned int atoi(const char *s)
+{
+	unsigned int u = 0;
+
+	while (*s)
+		u = (u * 10) + (*s++ - '0');
+
+	return u;
 }
 
 static void _hexn(unsigned int val, char *buf, int start)
@@ -106,6 +116,27 @@ void hex4(unsigned int val, char *buf)
 void hex8(unsigned int val, char *buf)
 {
 	_hexn(val, buf, 28);
+}
+
+void _hexdump(unsigned char *p, int len)
+{
+	char str[48];
+	int n;
+	int y = 0;
+
+	for (n = 0; n < len; n++) {
+		str[y++] = hex[(p[n] >> 4) & 0xf];
+		str[y++] = hex[p[n] & 0xf];
+		if (y > sizeof(str) - 3) {
+			str[y] = '\0';
+			y = 0;
+			usb_queue_string(str);
+		}
+	}
+	if (y) {
+		str[y] = '\0';
+		usb_queue_string(str);
+	}
 }
 
 void hexdump(unsigned char *p, int len)
@@ -276,9 +307,20 @@ void lava_lmp_ls_bus_mode(int bus, enum ls_direction nInOut)
 
 	if (bus)
 		n +=2;
+/*
+	if (lava_lmp_get_bus_mode(bus) != nInOut)
+		goto set;
 
+	if (LPC_GPIO->PIN[1] & (2 << n))
+		goto set;
+
+	if (((LPC_GPIO->PIN[1] >> n) & 1) == nInOut)
+		return;
+
+set:
+*/
 	/* kill any driving from level shifter */
-	LPC_GPIO->SET[1] = 2 << n;
+//	LPC_GPIO->SET[1] = 2 << n;
 
 	if (!nInOut)
 		/* set B -> A direction */
