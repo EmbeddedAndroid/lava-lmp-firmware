@@ -34,6 +34,7 @@
 static char width = 1;
 static unsigned int read_size = 0;
 static char spi_mode = 0;
+static int errors;
 
 enum {
 	UTF8_VIOL__4BIT = 0xff,
@@ -258,8 +259,10 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 			usb_queue_string(str);
 			LPC_GPIO->NOT[0] = 1 << 7;
 		}
-		usb_queue_string("\"");
-		usb_queue_string("}\x04");
+		usb_queue_string("\",\"err\":\"");
+		dec(errors, str);
+		usb_queue_string(str);
+		usb_queue_string("\"}\x04");
 
 		spi_mode_nselect(1);
 		LPC_GPIO->SET[0] = 1 << 7;
@@ -382,6 +385,7 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 					continue;
 
 				case UTF8_VIOL__INIT:
+					errors = 0;
 					spi_mode = 0;
 					width = 1;
 					n++;
@@ -397,10 +401,13 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 				case UTF8_VIOL__WAIT_FLASH_DONE:
 					width = 1;
 					lava_lmp_ls_bus_mode(1, LS_DIR_IN);
-					while (spi_mode_shift_in() & 1)
-						;
+					u = 1;
+					while (u & 1)
+						u = spi_mode_shift_in();
 					lava_lmp_ls_bus_mode(1, LS_DIR_OUT);
 					n++;
+					if (u & (1 << 6))
+						errors++;
 					continue;
 				}
 
@@ -416,24 +423,24 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 
 			switch (width) {
 			case 4:
-				LPC_GPIO->CLR[0] = SPI_SCK << 8;
 				LPC_GPIO->CLR[0] = ((~(u >> 4)) & 15) << 16;
 				LPC_GPIO->SET[0] = (u >> 4) << 16;
+				LPC_GPIO->CLR[0] = SPI_SCK << 8;
 				LPC_GPIO->SET[0] = SPI_SCK << 8;
 
-				LPC_GPIO->CLR[0] = SPI_SCK << 8;
 				LPC_GPIO->CLR[0] = ((~u) & 15) << 16;
 				LPC_GPIO->SET[0] = (u & 0xf) << 16;
+				LPC_GPIO->CLR[0] = SPI_SCK << 8;
 				LPC_GPIO->SET[0] = SPI_SCK << 8;
 				break;
 
 			default:
 				for (j = 0; j < 8; j++) {
-					LPC_GPIO->CLR[0] = SPI_SCK << 8;
 					if (u & 0x80)
 						LPC_GPIO->SET[0] = 1 << 16;
 					else
 						LPC_GPIO->CLR[0] = 1 << 16;
+					LPC_GPIO->CLR[0] = SPI_SCK << 8;
 					LPC_GPIO->SET[0] = SPI_SCK << 8;
 					u <<= 1;
 				}
