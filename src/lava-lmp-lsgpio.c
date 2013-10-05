@@ -29,7 +29,7 @@
  */
 
 #define SPI_NCS (1 << 0)
-#define SPI_SCK (1 << 1)
+#define SPI_SCK (0x82) /* b7 and b1 */
 
 static char width = 1;
 static unsigned int read_size = 0;
@@ -197,10 +197,11 @@ static unsigned char spi_mode_shift_in(void)
 			/* driver changes at lowgoing edge */
 
 			LPC_GPIO->CLR[0] = SPI_SCK << 8;
-			LPC_GPIO->SET[0] = SPI_SCK << 8;
 			c <<= 1;
 			if (LPC_GPIO->PIN[0] & (1 << 17))
 				c |= 1;
+			LPC_GPIO->SET[0] = SPI_SCK << 8;
+
 		}
 		break;
 	}
@@ -215,13 +216,14 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 	unsigned char n, u, j;
 	unsigned char bus = 0;
 	unsigned char c;
+	unsigned int w;
 
 	if (!ctx)
 		return 0;
 
 	if (reason == REASON_SEND_REPORT ||
 				(read_size && reason == LEJPCB_COMPLETE)) {
-		char str[32];
+		char str[64];
 
 		lmp_issue_report_header("lsgpio\",\"bus\":[");
 		for (n = 0; n < 2; n++) {
@@ -247,6 +249,7 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 			for (n = 0; n < (sizeof(str) - 2) && read_size;) {
 				read_size--;
 				c = spi_mode_shift_in();
+
 				if (c < 0x80 && c >= 0x20 &&
 						c != '\"' && c != '\\')
 					str[n++] = c;
@@ -373,29 +376,32 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 //		if (width == 1)
 			LPC_GPIO->CLR[0] = SPI_NCS << 8;
 
+		w = LPC_GPIO->PIN[0] & ~((0xf << 16) | (SPI_SCK << 8));
+
 		n = 0;
 		while (n < ctx->npos) {
 
-			switch ((unsigned char)ctx->buf[n] & 0xc0) {
-			case 0xc0:
-				switch ((unsigned char)ctx->buf[n]) {
+			u = ctx->buf[n++];
+			if (!(u & 0x80))
+				goto write;
+
+			switch (u & 0xe0) {
+			case 0xe0:
+				switch (u) {
 				case UTF8_VIOL__4BIT:
 					width = 4;
-					n++;
 					continue;
 
 				case UTF8_VIOL__INIT:
 					errors = 0;
 					spi_mode = 0;
 					width = 1;
-					n++;
 					continue;
 
 				case UTF8_VIOL__CS_HILO:
 					LPC_GPIO->SET[0] = SPI_NCS << 8;
 					LPC_GPIO->CLR[0] = SPI_NCS << 8;
 					width = 1;
-					n++;
 					continue;
 
 				case UTF8_VIOL__WAIT_FLASH_DONE:
@@ -405,42 +411,31 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 					while (u & 1)
 						u = spi_mode_shift_in();
 					lava_lmp_ls_bus_mode(1, LS_DIR_OUT);
-					n++;
 					if (u & (1 << 6))
 						errors++;
 					continue;
 				}
-
-				esc = ctx->buf[n++];
+				continue;
+			case 0xc0:
+				esc = u << 6;
 				continue;
 			case 0x80:
-				u = (esc << 6) | (ctx->buf[n++] & 0x3f);
-				break;
-			default:
-				u = ctx->buf[n++];
+			case 0xa0:
+				u = esc | (u & 0x3f);
 				break;
 			}
-
+write:
 			switch (width) {
 			case 4:
-				LPC_GPIO->CLR[0] = ((~(u >> 4)) & 15) << 16;
-				LPC_GPIO->SET[0] = (u >> 4) << 16;
-				LPC_GPIO->CLR[0] = SPI_SCK << 8;
+				LPC_GPIO->PIN[0] = w | ((u & 0xf0) << 12);
 				LPC_GPIO->SET[0] = SPI_SCK << 8;
-
-				LPC_GPIO->CLR[0] = ((~u) & 15) << 16;
-				LPC_GPIO->SET[0] = (u & 0xf) << 16;
-				LPC_GPIO->CLR[0] = SPI_SCK << 8;
+				LPC_GPIO->PIN[0] = w | ((u & 0xf) << 16);
 				LPC_GPIO->SET[0] = SPI_SCK << 8;
 				break;
 
 			default:
 				for (j = 0; j < 8; j++) {
-					if (u & 0x80)
-						LPC_GPIO->SET[0] = 1 << 16;
-					else
-						LPC_GPIO->CLR[0] = 1 << 16;
-					LPC_GPIO->CLR[0] = SPI_SCK << 8;
+					LPC_GPIO->PIN[0] = w | ((u & 128) << 9);
 					LPC_GPIO->SET[0] = SPI_SCK << 8;
 					u <<= 1;
 				}
