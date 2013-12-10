@@ -295,6 +295,7 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 		return -1; /* fail it */
 
 	case LMPPT_modes___option:
+		LPC_GPIO->CLR[0] = 1 << 7;
 		/* require that we had a correct modes[] name */
 		if (!(ctx->st[ctx->sp - 1].b & name_valid))
 			return -1;
@@ -323,12 +324,12 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 				bus = 1;
 
 			if (!strcmp(ctx->buf, "in")) {
-				lava_lmp_ls_bus_mode(bus, 1);
+				lava_lmp_ls_bus_mode(bus, 0);
 				break;
 			}
 
 			if (!strcmp(ctx->buf, "out")) {
-				lava_lmp_ls_bus_mode(bus, 0);
+				lava_lmp_ls_bus_mode(bus, 1);
 				break;
 			}
 			return -1;
@@ -340,11 +341,6 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 			if (ctx->st[ctx->sp - 1].b & name_b_data)
 				bus = 1;
 
-			if (strcmp(ctx->buf, "data"))
-				return -1;
-
-			if (ctx->npos != 2)
-				return -1;
 			n = hex_char(ctx->buf[0]);
 			if (n == 0x10)
 				return -1;
@@ -352,10 +348,12 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 			n = hex_char(ctx->buf[1]);
 			if (n == 0x10)
 				return -1;
+
 			lava_lmp_bus_write(bus, u | n);
 		}
 
 		lmp_json_callback_board_lsgpio(ctx, REASON_SEND_REPORT);
+		LPC_GPIO->SET[0] = 1 << 7;
 		break;
 
 	case LMPPT_spi__write:
@@ -435,7 +433,7 @@ write:
 
 			default:
 				for (j = 0; j < 8; j++) {
-					LPC_GPIO->PIN[0] = w | ((u & 128) << 9);
+					LPC_GPIO->PIN[0] = w | (0xc0 << 16) |((u & 128) << 9);
 					LPC_GPIO->SET[0] = SPI_SCK << 8;
 					u <<= 1;
 				}

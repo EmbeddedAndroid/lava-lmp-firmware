@@ -30,8 +30,8 @@ all:
 		@ exit 1
 		@fi
 	@done
-	@M=`realpath /dev/disk/by-id/usb-NXP_LPC1XXX_IFLASH_ISP-0:0`
-	@M=`mount | grep "$$M" | cut -d' ' -f3`
+	@M="`realpath /dev/disk/by-id/usb-NXP_LPC1XXX_IFLASH_ISP-0:0`"
+	@M="`mount | grep "$$M" | cut -d' ' -f3- | sed s/\ type.*//g`"
 	@if [ -z "$$M" ] ; then
 	@ echo "LPC11U24 not mounted"
 	@ exit 1
