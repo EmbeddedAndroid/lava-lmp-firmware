@@ -414,11 +414,11 @@ void lava_lmp_pin_init(void)
 	LPC_IOCON->PIO0_8 =  (1 << 3) | (0 << 0);
 	LPC_IOCON->PIO0_9 =  (1 << 3) | (0 << 0);
 	LPC_IOCON->SWCLK_PIO0_10 = (1 << 3) | (1 << 0);
-	LPC_IOCON->TDI_PIO0_11 = (1 << 3) | (1 << 0);
-	LPC_IOCON->TMS_PIO0_12 = (1 << 3) | (1 << 0);
-	LPC_IOCON->TDO_PIO0_13 = (1 << 3) | (1 << 0);
-	LPC_IOCON->TRST_PIO0_14 = (1 << 3) | (1 << 0);
-	LPC_IOCON->SWDIO_PIO0_15 = (1 << 3) | (1 << 0);
+	LPC_IOCON->TDI_PIO0_11 = (1 << 7) | (1 << 3) | (1 << 0);
+	LPC_IOCON->TMS_PIO0_12 = (1 << 7) | (1 << 3) | (1 << 0);
+	LPC_IOCON->TDO_PIO0_13 = (1 << 7) | (1 << 3) | (1 << 0);
+	LPC_IOCON->TRST_PIO0_14 = (1 << 7) | (1 << 3) | (1 << 0);
+	LPC_IOCON->SWDIO_PIO0_15 = (1 << 7) | (1 << 3) | (1 << 0);
 
 	LPC_IOCON->PIO0_2 = (1 << 3) | (0 << 0); /* nLED1 */
 	LPC_IOCON->PIO0_7 = (1 << 3) | (0 << 0); /* nLED2 */

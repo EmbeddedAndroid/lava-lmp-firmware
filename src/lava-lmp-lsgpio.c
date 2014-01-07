@@ -267,7 +267,7 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 		usb_queue_string(str);
 		usb_queue_string("\"}\x04");
 
-		spi_mode_nselect(1);
+//		spi_mode_nselect(1);
 		LPC_GPIO->SET[0] = 1 << 7;
 
 		return 0;
@@ -309,7 +309,7 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 			}
 
 			if (!strcmp(ctx->buf, "passthru")) {
-				LPC_GPIO->SET[0] = 4 << 16;
+//				LPC_GPIO->SET[0] = 4 << 16;
 				lava_lmp_actuate_relay(RL1_CLR);
 				lava_lmp_actuate_relay(RL2_CLR);
 				break;
