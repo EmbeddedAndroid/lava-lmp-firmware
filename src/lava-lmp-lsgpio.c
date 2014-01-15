@@ -240,7 +240,7 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 				usb_queue_string(",");
 		}
 		usb_queue_string("]},{\"name\":\"jack\",\"state\":");
-		usb_queue_true_or_false(LPC_GPIO->PIN[0] & 1 << 7);
+		usb_queue_true_or_false((LPC_GPIO->PIN[0] >> 7)^0x01);
 		usb_queue_string("}]");
 
 		usb_queue_string(",\"read\":\"");
@@ -260,7 +260,7 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 			}
 			str[n] = '\0';
 			usb_queue_string(str);
-			LPC_GPIO->NOT[0] = 1 << 7;
+//			LPC_GPIO->NOT[0] = 1 << 7;
 		}
 		usb_queue_string("\",\"err\":\"");
 		dec(errors, str);
@@ -268,7 +268,7 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 		usb_queue_string("\"}\x04");
 
 //		spi_mode_nselect(1);
-		LPC_GPIO->SET[0] = 1 << 7;
+//		LPC_GPIO->SET[0] = 1 << 7;
 
 		return 0;
 	}
@@ -295,7 +295,7 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 		return -1; /* fail it */
 
 	case LMPPT_modes___option:
-		LPC_GPIO->CLR[0] = 1 << 7;
+//		LPC_GPIO->CLR[0] = 1 << 7;
 		/* require that we had a correct modes[] name */
 		if (!(ctx->st[ctx->sp - 1].b & name_valid))
 			return -1;
@@ -303,13 +303,14 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 		if (ctx->st[ctx->sp - 1].b & name_audio) {
 
 			if (!strcmp(ctx->buf, "disconnect")) {
+				LPC_GPIO->SET[0] = 1 << 7;
 				lava_lmp_actuate_relay(RL1_SET);
 				lava_lmp_actuate_relay(RL2_SET);
 				break;
 			}
 
 			if (!strcmp(ctx->buf, "passthru")) {
-//				LPC_GPIO->SET[0] = 4 << 16;
+				LPC_GPIO->CLR[0] = 1 << 7;
 				lava_lmp_actuate_relay(RL1_CLR);
 				lava_lmp_actuate_relay(RL2_CLR);
 				break;
@@ -353,12 +354,12 @@ char lmp_json_callback_board_lsgpio(struct lejp_ctx *ctx, char reason)
 		}
 
 		lmp_json_callback_board_lsgpio(ctx, REASON_SEND_REPORT);
-		LPC_GPIO->SET[0] = 1 << 7;
+//		LPC_GPIO->SET[0] = 1 << 7;
 		break;
 
 	case LMPPT_spi__write:
 
-		LPC_GPIO->NOT[0] = 1 << 7;
+//		LPC_GPIO->NOT[0] = 1 << 7;
 
 		if (reason == LEJPCB_VAL_STR_START) {
 			if (!spi_mode) {
@@ -465,7 +466,7 @@ write:
 		if (!read_size)
 			spi_mode_nselect(1);
 
-		LPC_GPIO->SET[0] = 1 << 7;
+//		LPC_GPIO->SET[0] = 1 << 7;
 
 		break;
 
