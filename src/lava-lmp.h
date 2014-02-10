@@ -46,6 +46,7 @@ enum lmp_parsing_tokens {
 	LMPPT_edid,
 	LMPPT_spi__write,
 	LMPPT_spi__read,
+	LMPPT_reset,
 };
 
 #define EEPROM_RESERVED_OFFSET 64

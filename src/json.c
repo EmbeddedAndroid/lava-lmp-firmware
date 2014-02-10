@@ -46,6 +46,7 @@ static const char * const paths[] = {
 	"edid",			/* 10 */
 	"spi.write",		/* 11 */
 	"spi.read",		/* 12 */
+	"reset",		/* 13 */
 };
 
 void lmp_issue_report_header(const char *name)
@@ -85,6 +86,8 @@ lmp_json_callback_info(struct lejp_ctx *ctx, char reason)
 static char
 lmp_json_callback(struct lejp_ctx *ctx, char reason)
 {
+	int j = 0;
+
 	if (!(reason & LEJP_FLAG_CB_IS_VALUE))
 		return 0;
 
@@ -119,6 +122,22 @@ lmp_json_callback(struct lejp_ctx *ctx, char reason)
 		else
 			flash_led = ctx->buf[0] & 1;
 		lmp_json_callback_board(ctx, REASON_SEND_REPORT);
+		break;
+
+	case LMPPT_reset:
+		LPC_GPIO->CLR[0] = 1 << 7;
+
+		lmp_issue_report_header("reset\",\"state\":");
+		usb_queue_true_or_false(ctx->buf[0] & 1);
+		usb_queue_string("}]}\x04");
+
+		if (!strcmp(ctx->buf, "1")) {
+			usb_queue_string("LMP module is resetting...");
+			for (j = 0; j < 1000000; j++) ;
+			NVIC_SystemReset();
+		}
+
+		LPC_GPIO->SET[0] = 1 << 7;
 		break;
 	}
 
